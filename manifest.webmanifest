@@ -1,0 +1,17 @@
+{
+  "name": "단단 · 뜨개 단수 카운터",
+  "short_name": "단단",
+  "description": "화면 위를 누르면 올라가고 아래를 누르면 내려가는 뜨개 단수 카운터",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#6d4f5c",
+  "theme_color": "#6d4f5c",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

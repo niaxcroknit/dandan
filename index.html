@@ -1,0 +1,2080 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no">
+<title>단단</title>
+<meta name="description" content="화면 위를 누르면 올라가고 아래를 누르면 내려가는 뜨개 단수 카운터. 프로젝트별 카운트와 배경 사진을 저장해요.">
+<meta name="theme-color" content="#3a2c35">
+<meta name="format-detection" content="telephone=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="단단">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta property="og:title" content="단단 · 뜨개 단수 카운터">
+<meta property="og:description" content="뜨개할 때 화면만 톡톡 누르면 되는 단수 카운터">
+<meta property="og:image" content="https://niaxcroknit.github.io/dandan/icons/icon-512.png">
+<link rel="stylesheet" href="fonts/fonts.css">
+<script src="native.js"></script>
+<style>
+/* Layout: full-screen tap canvas in four zones, frosted counter at the centre, settings tucked behind one small corner button that opens a glass sheet. */
+:root {
+  --glass: rgba(255, 255, 255, 0.16);
+  --glass-strong: rgba(255, 255, 255, 0.26);
+  --glass-edge: rgba(255, 255, 255, 0.42);
+  --ink: #fffdf9;
+  --ink-soft: rgba(255, 253, 249, 0.72);
+  --plus: #ffe3b8;
+  --minus: #c9e4ff;
+  --danger: rgba(255, 140, 140, .38);
+  --shade: rgba(28, 20, 26, 0.28);
+  --sheet: rgba(40, 30, 38, 0.55);
+  --photo-op: 0.8;
+  --font-num: "Outfit", "Avenir Next", "Helvetica Neue", system-ui, sans-serif;
+  --font-ui: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); box-sizing: border-box; }
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0;
+  background: #1f1a1e;
+  color: var(--ink);
+  font-family: var(--font-ui);
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ---------- background ---------- */
+.bg {
+  position: fixed; inset: 0;
+  background:
+    radial-gradient(60% 50% at 18% 22%, #d98e8e 0%, transparent 70%),
+    radial-gradient(55% 45% at 85% 30%, #e7b865 0%, transparent 70%),
+    radial-gradient(70% 55% at 70% 88%, #7fa28a 0%, transparent 70%),
+    radial-gradient(60% 50% at 10% 90%, #8a6fa3 0%, transparent 70%),
+    #6d4f5c;
+  background-size: cover;
+  background-position: center;
+}
+.bg.photo { background-color: transparent; opacity: var(--photo-op); }
+.knit {
+  position: fixed; inset: 0; pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='26' viewBox='0 0 22 26'%3E%3Cpath d='M2 3 Q6 16 11 21 M20 3 Q16 16 11 21' fill='none' stroke='white' stroke-opacity='.10' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-size: 22px 26px;
+  mix-blend-mode: soft-light;
+}
+.bg.photo + .knit { display: none; }
+.shade {
+  position: fixed; inset: 0; pointer-events: none;
+  background: radial-gradient(80% 70% at 50% 50%, transparent 30%, var(--shade) 100%);
+}
+
+/* ---------- tap surface ---------- */
+.stage {
+  position: fixed; inset: 0;
+  touch-action: manipulation;
+  cursor: pointer;
+  overflow: hidden;
+}
+.guide {
+  position: absolute; pointer-events: none;
+  background: repeating-linear-gradient(var(--dir), rgba(255,255,255,.22) 0 6px, transparent 6px 14px);
+  transition: opacity .6s ease;
+}
+.guide.h { --dir: to right; top: 50%; left: 0; right: 0; height: 1px; }
+.hint {
+  position: absolute; pointer-events: none;
+  font-family: var(--font-num); font-weight: 300;
+  font-size: clamp(28px, 7vw, 48px);
+  color: rgba(255,255,255,.34);
+  transition: opacity .6s ease;
+}
+.hint.top { left: 50%; top: 16%; transform: translateX(-50%); }
+.hint-sub { display: block; margin-top: 2px; font-family: var(--font-ui); font-size: 11px; letter-spacing: .14em; text-align: center; }
+.hint.bottom { left: 50%; bottom: 16%; transform: translateX(-50%); }
+.stage.quiet .guide, .stage.quiet .hint { opacity: .28; }
+
+/* ---------- the counter ---------- */
+.counter-wrap {
+  position: absolute; left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  display: flex; flex-direction: column; align-items: center;
+}
+.project-name {
+  pointer-events: auto;
+  cursor: pointer;
+  position: absolute; bottom: 100%;
+  margin-bottom: 14px;
+  max-width: 80vw;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: clamp(14px, 3.6vw, 18px);
+  letter-spacing: .06em;
+  padding: 5px 14px;
+  border-radius: 999px;
+  background: var(--glass);
+  border: 1px solid rgba(255,255,255,.28);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  text-shadow: 0 1px 6px rgba(0,0,0,.3);
+}
+.counter {
+  display: flex; align-items: center; gap: .08em;
+  padding: .16em .34em .2em;
+  font-family: var(--font-num);
+  font-weight: 400;
+  font-size: clamp(82px, 24.5vw, 230px);
+  line-height: 1;
+  border-radius: .32em;
+  background: linear-gradient(145deg, var(--glass-strong), var(--glass) 55%, rgba(255,255,255,.08));
+  border: 1px solid var(--glass-edge);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.55),
+    inset 0 -1px 0 rgba(255,255,255,.12),
+    0 30px 60px -20px rgba(20, 10, 20, .45);
+  -webkit-backdrop-filter: blur(22px) saturate(170%);
+  backdrop-filter: blur(22px) saturate(170%);
+  text-shadow: 0 2px 18px rgba(0,0,0,.18);
+  transition: box-shadow .3s ease;
+}
+.num {
+  display: inline-flex;
+  transition: transform .25s cubic-bezier(.3,1.6,.5,1), color .3s ease, text-shadow .3s ease;
+}
+.num span { display: inline-block; width: .69em; text-align: center; }
+.colon {
+  font-weight: 400;
+  opacity: .7;
+  transform: translateY(-.06em);
+  animation: breathe 3.2s ease-in-out infinite;
+}
+@keyframes breathe { 50% { opacity: .35; } }
+
+.num.up   { transform: scale(1.14) translateY(-.04em); color: var(--plus);  text-shadow: 0 0 28px rgba(255, 214, 150, .75); }
+.num.down { transform: scale(.9) translateY(.04em);    color: var(--minus); text-shadow: 0 0 28px rgba(170, 210, 255, .75); }
+.num.floor { animation: shake .36s ease; }
+@keyframes shake { 20%{transform:translateX(-.05em)} 40%{transform:translateX(.05em)} 60%{transform:translateX(-.03em)} 80%{transform:translateX(.02em)} }
+.counter.flash { box-shadow: inset 0 1px 0 rgba(255,255,255,.7), inset 0 0 40px rgba(255,255,255,.18), 0 30px 60px -20px rgba(20,10,20,.45); }
+
+/* ---------- touch ripple ---------- */
+.ripple {
+  position: absolute;
+  width: 140px; height: 140px;
+  margin: -70px 0 0 -70px;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(255,255,255,.35) 0%, rgba(255,255,255,.08) 55%, transparent 70%);
+  border: 1.5px solid rgba(255,255,255,.65);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  animation: ripple .7s cubic-bezier(.2,.7,.3,1) forwards;
+}
+.ripple.plus  { border-color: rgba(255, 222, 170, .9); }
+.ripple.minus { border-color: rgba(185, 220, 255, .9); }
+@keyframes ripple { from { transform: scale(.2); opacity: 1; } to { transform: scale(1.5); opacity: 0; } }
+.pop {
+  position: absolute; pointer-events: none;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-num); font-weight: 400;
+  font-size: 28px;
+  text-shadow: 0 2px 10px rgba(0,0,0,.3);
+  animation: popUp .8s ease-out forwards;
+}
+.pop.plus  { color: var(--plus); }
+.pop.minus { color: var(--minus); animation-name: popDown; }
+@keyframes popUp   { to { transform: translate(-50%, -140%); opacity: 0; } }
+@keyframes popDown { to { transform: translate(-50%, 40%);   opacity: 0; } }
+
+/* ---------- menu button ---------- */
+.menu-btn {
+  position: fixed; z-index: 5;
+  top: calc(14px + env(safe-area-inset-top, 0px));
+  right: 14px;
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  appearance: none; border: 1px solid rgba(255,255,255,.3);
+  background: rgba(255,255,255,.1);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  color: var(--ink-soft);
+  font-size: 18px; line-height: 1;
+  cursor: pointer;
+  opacity: .55;
+  transition: opacity .2s ease;
+}
+.menu-btn:hover, .menu-btn:focus-visible { opacity: 1; }
+.menu-btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* ---------- settings sheet ---------- */
+.backdrop {
+  position: fixed; inset: 0; z-index: 8;
+  background: rgba(10, 6, 10, .35);
+  opacity: 0; pointer-events: none;
+  transition: opacity .25s ease;
+}
+.backdrop.open { opacity: 1; pointer-events: auto; }
+.sheet {
+  position: fixed; z-index: 9;
+  left: 50%; bottom: 0;
+  width: min(460px, 100%);
+  max-height: 86%;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 18px 18px calc(22px + env(safe-area-inset-bottom, 0px) + var(--ad-h, 0px));
+  border-radius: 26px 26px 0 0;
+  background: var(--sheet);
+  border: 1px solid var(--glass-edge);
+  border-bottom: 0;
+  -webkit-backdrop-filter: blur(26px) saturate(160%);
+  backdrop-filter: blur(26px) saturate(160%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.4), 0 -20px 50px -20px rgba(0,0,0,.5);
+  transform: translate(-50%, 105%);
+  transition: transform .32s cubic-bezier(.2,.8,.2,1);
+  display: flex; flex-direction: column; gap: 20px;
+  -webkit-user-select: text; user-select: text;
+}
+.sheet.open { transform: translate(-50%, 0); }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sheet-head h2 { margin: 0; font-size: 17px; font-weight: 400; letter-spacing: .04em; }
+.section { display: flex; flex-direction: column; gap: 10px; }
+.section h3 {
+  margin: 0; font-size: 12px; font-weight: 400;
+  letter-spacing: .14em; color: var(--ink-soft);
+}
+.btn {
+  appearance: none; cursor: pointer;
+  font: inherit; font-size: 14px;
+  color: var(--ink);
+  background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.22);
+  padding: 9px 14px;
+  border-radius: 12px;
+  white-space: nowrap;
+  transition: background .2s ease;
+}
+.btn:hover { background: rgba(255,255,255,.2); }
+.btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+.btn.armed { background: var(--danger); }
+.add-row { display: block; }
+.btn.add {
+  width: 100%;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 15px 18px;
+  font-size: 16px; font-weight: 500;
+  color: #3a2530;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 240, 220, .9);
+  background: linear-gradient(145deg, #ffe9c7, #ffc9a8);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.8), 0 10px 24px -10px rgba(255, 170, 120, .7);
+  transition: transform .15s ease, box-shadow .2s ease, filter .2s ease;
+}
+.btn.add:hover { background: linear-gradient(145deg, #fff0d6, #ffd3b6); filter: brightness(1.03); }
+.btn.add:active { transform: scale(.98); }
+.btn.add:focus-visible { outline-color: #ffe9c7; outline-offset: 3px; }
+.plus-mark {
+  display: inline-grid; place-items: center;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: rgba(58, 37, 48, .12);
+  font-family: var(--font-num); font-size: 20px; line-height: 1;
+}
+.btn.ghost { background: transparent; border-color: transparent; }
+.btn.back-link { padding-left: 4px; color: var(--ink-soft); }
+#showSheet .sheet-head h2 { flex: 1; text-align: center; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.projects { display: flex; flex-direction: column; gap: 6px; }
+.proj {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%;
+  text-align: left;
+  appearance: none; cursor: pointer;
+  font: inherit; color: var(--ink);
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.12);
+}
+.proj:hover { background: rgba(255,255,255,.12); }
+.proj:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+.proj.active { background: rgba(255,255,255,.2); border-color: rgba(255,255,255,.45); }
+.proj .pname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+.proj .pcount { font-family: var(--font-num); font-weight: 300; font-size: 17px; font-variant-numeric: tabular-nums; color: var(--ink-soft); }
+.proj.active .pcount { color: var(--ink); }
+
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field label { font-size: 12px; color: var(--ink-soft); letter-spacing: .08em; }
+.field input[type="text"] {
+  font: inherit; font-size: 16px;
+  color: var(--ink);
+  background: rgba(0,0,0,.18);
+  border: 1px solid rgba(255,255,255,.25);
+  border-radius: 12px;
+  padding: 10px 12px;
+  outline: none;
+}
+.field input[type="text"]:focus { border-color: var(--ink); }
+.btn.finish {
+  width: 100%;
+  padding: 12px 16px;
+  font-weight: 500;
+  background: rgba(190, 230, 205, .2);
+  border-color: rgba(200, 240, 215, .55);
+}
+.btn.finish:hover { background: rgba(190, 230, 205, .32); }
+
+.done-toggle {
+  appearance: none; cursor: pointer;
+  display: flex; align-items: center; gap: 8px;
+  width: 100%;
+  font: inherit; font-size: 14px; color: var(--ink);
+  padding: 10px 4px;
+  background: transparent; border: 0;
+  border-top: 1px solid rgba(255,255,255,.14);
+  text-align: left;
+}
+.done-toggle:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 8px; }
+.done-toggle-count {
+  font-family: var(--font-num); font-size: 13px;
+  padding: 1px 9px; border-radius: 999px;
+  background: rgba(255,255,255,.14);
+}
+.done-toggle .chev { margin-left: auto; font-size: 20px; line-height: 1; color: var(--ink-soft); transition: transform .2s ease; }
+.done-toggle[aria-expanded="true"] .chev { transform: rotate(90deg); }
+.done-panel { display: flex; flex-direction: column; gap: 10px; }
+.done-summary { margin: 0; font-size: 13px; color: var(--ink-soft); }
+.done-list { display: flex; flex-direction: column; gap: 8px; }
+.date-field {
+  position: relative;
+  display: flex; align-items: center;
+  height: 46px;
+  padding: 0 40px 0 12px;
+  border-radius: 12px;
+  background: rgba(0,0,0,.18);
+  border: 1px solid rgba(255,255,255,.25);
+  min-width: 0;
+}
+.date-field::after {
+  content: "";
+  position: absolute; right: 14px; top: 50%;
+  width: 14px; height: 14px; margin-top: -7px;
+  border-radius: 3px;
+  border: 1.5px solid rgba(255,253,249,.6);
+  border-top-width: 4px;
+  pointer-events: none;
+}
+.date-field:focus-within { border-color: var(--ink); }
+.date-display {
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--ink);
+  pointer-events: none;
+}
+.date-display.empty { color: rgba(255,253,249,.45); }
+.date-input {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  margin: 0; padding: 0; border: 0;
+  opacity: 0;
+  font-size: 16px;
+  -webkit-appearance: none; appearance: none;
+  cursor: pointer;
+}
+.field { min-width: 0; }
+.date-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+@media (max-width: 340px) { .date-pair { grid-template-columns: 1fr; } }
+
+.back-btn {
+  position: fixed; z-index: 5;
+  top: calc(14px + env(safe-area-inset-top, 0px));
+  left: 14px;
+  appearance: none; cursor: pointer;
+  font: inherit; font-size: 14px;
+  color: var(--ink);
+  padding: 9px 16px 9px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.3);
+  background: rgba(255,255,255,.12);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+}
+.back-btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+body.showcase .counter-wrap, body.showcase .guide, body.showcase .hint { display: none; }
+body.showcase .stage { cursor: default; }
+body.showcase .shade { background: linear-gradient(to top, rgba(20,12,18,.45), transparent 45%); }
+body.showcase .menu-btn { opacity: .8; }
+.showcase-card {
+  position: fixed; z-index: 3;
+  left: 50%; bottom: calc(40px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  width: min(420px, calc(100% - 32px));
+  text-align: center;
+  padding: 18px 22px 20px;
+  border-radius: 24px;
+  background: linear-gradient(145deg, var(--glass-strong), var(--glass));
+  border: 1px solid var(--glass-edge);
+  -webkit-backdrop-filter: blur(22px) saturate(170%); backdrop-filter: blur(22px) saturate(170%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.55), 0 20px 50px -20px rgba(0,0,0,.5);
+  cursor: pointer;
+  -webkit-user-select: none; user-select: none;
+  transition: transform .15s ease, background .2s ease;
+  animation: scRise .5s cubic-bezier(.2,1.2,.4,1);
+}
+@keyframes scRise { from { transform: translate(-50%, 20px) scale(.96); opacity: 0; } }
+.showcase-card:hover { background: linear-gradient(145deg, rgba(255,255,255,.32), var(--glass-strong)); }
+.showcase-card:active { transform: translateX(-50%) scale(.98); }
+.showcase-card:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+.sc-edit {
+  position: absolute; top: 12px; right: 14px;
+  font-size: 11px; letter-spacing: .08em;
+  padding: 3px 9px; border-radius: 999px;
+  color: var(--ink-soft);
+  background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.22);
+}
+.sc-eyebrow { font-size: 11px; letter-spacing: .3em; color: var(--plus); }
+.sc-name { font-size: clamp(22px, 6.4vw, 32px); font-weight: 500; margin-top: 6px; overflow-wrap: anywhere; text-shadow: 0 2px 12px rgba(0,0,0,.25); }
+.sc-period { font-size: 14px; color: var(--ink-soft); margin-top: 6px; font-variant-numeric: tabular-nums; }
+
+.done-item { width: 100%; appearance: none; cursor: pointer; font: inherit; color: var(--ink); text-align: left; transition: background .2s ease; }
+.done-item:hover { background: rgba(255,255,255,.13); }
+.done-item:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+.done-empty { margin: 0; font-size: 13px; color: var(--ink-soft); padding: 14px; border-radius: 14px; background: rgba(255,255,255,.05); border: 1px dashed rgba(255,255,255,.22); }
+.done-item {
+  display: grid; grid-template-columns: 52px 1fr; gap: 12px; align-items: center;
+  padding: 10px;
+  border-radius: 16px;
+  background: rgba(255,255,255,.07);
+  border: 1px solid rgba(255,255,255,.14);
+}
+.done-thumb {
+  width: 52px; height: 52px; border-radius: 12px;
+  background: linear-gradient(145deg, #d98e8e, #e7b865 45%, #7fa28a);
+  background-size: cover; background-position: center;
+  display: grid; place-items: center;
+  font-size: 22px; color: rgba(255,255,255,.9);
+  border: 1px solid rgba(255,255,255,.3);
+}
+.done-body { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.done-name { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.done-meta { font-size: 12px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.done-meta b { font-family: var(--font-num); font-weight: 500; color: var(--ink); font-size: 14px; }
+.done-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.done-actions .btn { padding: 5px 10px; font-size: 12px; border-radius: 10px; }
+
+.limit-dialog {
+  position: fixed; inset: 0; z-index: 14;
+  display: grid; place-items: center;
+  padding: 16px;
+  background: rgba(20, 12, 18, .55);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  animation: fadeIn .25s ease;
+}
+.limit-card {
+  width: min(360px, 100%);
+  padding: 26px 22px 18px;
+  border-radius: 26px;
+  text-align: center;
+  background: var(--sheet);
+  border: 1px solid var(--glass-edge);
+  -webkit-backdrop-filter: blur(26px) saturate(160%); backdrop-filter: blur(26px) saturate(160%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 30px 60px -20px rgba(0,0,0,.55);
+  animation: rise .4s cubic-bezier(.2,1.2,.4,1);
+}
+.limit-count {
+  display: inline-block;
+  font-family: var(--font-num); font-size: 14px; font-variant-numeric: tabular-nums;
+  padding: 3px 12px; border-radius: 999px;
+  color: var(--plus);
+  background: rgba(255, 214, 150, .14);
+  border: 1px solid rgba(255, 222, 170, .4);
+}
+.limit-title { margin: 12px 0 0; font-size: 19px; font-weight: 500; }
+.limit-text { word-break: keep-all; margin: 10px 0 0; font-size: 14px; line-height: 1.6; }
+.limit-text.soft { color: var(--ink-soft); font-size: 13px; }
+.limit-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 18px; }
+.limit-actions .btn { width: 100%; padding: 12px 14px; }
+.btn.limit-primary { font-weight: 500; background: rgba(255,255,255,.2); border-color: rgba(255,255,255,.4); }
+.done-limit-note { margin: 0; font-size: 12px; color: var(--ink-soft); }
+.celebrate {
+  position: fixed; inset: 0; z-index: 12;
+  display: grid; place-items: center;
+  padding: 16px;
+  background: rgba(20, 12, 18, .55);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  animation: fadeIn .3s ease;
+}
+.celebrate-card {
+  text-align: center;
+  padding: 30px 36px 32px;
+  width: min(320px, 100%);
+  border-radius: 28px;
+  background: linear-gradient(145deg, var(--glass-strong), var(--glass));
+  border: 1px solid var(--glass-edge);
+  -webkit-backdrop-filter: blur(24px) saturate(170%); backdrop-filter: blur(24px) saturate(170%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.6), 0 30px 60px -20px rgba(0,0,0,.5);
+  animation: rise .5s cubic-bezier(.2,1.4,.4,1);
+}
+.celebrate-eyebrow { font-size: 12px; letter-spacing: .3em; color: var(--plus); }
+.celebrate-name { font-size: clamp(22px, 6vw, 30px); font-weight: 500; margin-top: 8px; overflow-wrap: anywhere; }
+.celebrate-meta { font-size: 14px; color: var(--ink-soft); margin-top: 8px; font-variant-numeric: tabular-nums; }
+.confetti {
+  position: fixed; z-index: 13; pointer-events: none;
+  width: 10px; height: 10px; border-radius: 50%;
+  animation: fall 1.6s cubic-bezier(.2,.6,.4,1) forwards;
+}
+@keyframes fadeIn { from { opacity: 0; } }
+@keyframes rise { from { transform: translateY(20px) scale(.92); opacity: 0; } }
+@keyframes fall { to { transform: translate(var(--dx), var(--dy)) rotate(260deg); opacity: 0; } }
+.backup-banner {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 12px 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 214, 150, .14);
+  border: 1px solid rgba(255, 222, 170, .45);
+}
+.backup-banner.urgent { background: rgba(255, 170, 140, .2); border-color: rgba(255, 190, 160, .6); }
+.backup-banner-text { flex: 1; min-width: 0; font-size: 14px; line-height: 1.45; }
+.backup-banner .btn { flex: none; padding: 8px 12px; font-size: 13px; }
+.backup-status { margin: 0; font-size: 13px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.count-row { display: flex; gap: 8px; margin: 0; }
+
+/* long-press ring for counting down */
+.hold-ring {
+  position: fixed; z-index: 4; pointer-events: none;
+  width: 92px; height: 92px; margin: -46px 0 0 -46px;
+}
+.hold-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.hold-ring circle {
+  fill: rgba(185, 220, 255, .14);
+  stroke: var(--minus); stroke-width: 5; stroke-linecap: round;
+  stroke-dasharray: 277; stroke-dashoffset: 277;
+}
+.hold-ring.run circle { animation: holdFill var(--hold, 450ms) linear forwards; }
+@keyframes holdFill { to { stroke-dashoffset: 0; } }
+
+/* settings: switch + app info */
+.switch-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 14px; border-radius: 14px;
+  background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12);
+  font-size: 15px; cursor: pointer;
+}
+.switch {
+  -webkit-appearance: none; appearance: none; flex: none;
+  width: 46px; height: 28px; margin: 0; border-radius: 999px; cursor: pointer;
+  background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.3);
+  position: relative; transition: background .2s ease;
+}
+.switch::after {
+  content: ""; position: absolute; top: 3px; left: 3px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--ink); transition: transform .2s ease;
+}
+.switch:checked { background: rgba(190, 230, 205, .55); }
+.switch:checked::after { transform: translateX(18px); }
+.switch:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.btn.guide-again { color: var(--ink-soft); }
+.premium-card {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 16px; border-radius: 18px;
+  background: linear-gradient(145deg, rgba(255, 233, 199, .14), rgba(255, 201, 168, .08));
+  border: 1px solid rgba(255, 222, 170, .35);
+}
+.premium-title { font-size: 15px; font-weight: 500; }
+.premium-list { margin: 0; padding: 0; list-style: none; font-size: 13px; line-height: 1.7; color: var(--ink-soft); }
+.premium-list li::before { content: "· "; }
+.premium-buy { width: 100%; padding: 12px 14px; font-weight: 500; color: #3a2530; border-color: rgba(255, 240, 220, .9); background: linear-gradient(145deg, #ffe9c7, #ffc9a8); }
+.premium-buy:hover { background: linear-gradient(145deg, #fff0d6, #ffd3b6); }
+.premium-buy[disabled] { opacity: .6; cursor: default; }
+.premium-restore { align-self: center; color: var(--ink-soft); }
+.premium-done { font-size: 14px; line-height: 1.6; }
+.btn.limit-buy { font-weight: 500; color: #3a2530; border-color: rgba(255, 240, 220, .9); background: linear-gradient(145deg, #ffe9c7, #ffc9a8); }
+.app-info {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 14px 0 4px; border-top: 1px solid rgba(255,255,255,.12);
+  font-size: 12px; color: var(--ink-soft); text-align: center;
+}
+.app-info-name { font-size: 13px; color: var(--ink); letter-spacing: .04em; }
+.app-info-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.app-info-mail { color: var(--ink); -webkit-user-select: text; user-select: text; overflow-wrap: anywhere; }
+.btn.mini { padding: 3px 8px; font-size: 12px; border-radius: 8px; }
+.app-info-link { color: var(--ink-soft); }
+
+/* first-run guide */
+.onboard {
+  position: fixed; inset: 0; z-index: 15;
+  display: flex; flex-direction: column;
+  background: rgba(20, 12, 18, .78);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  padding: calc(16px + env(safe-area-inset-top, 0px)) 0 calc(20px + env(safe-area-inset-bottom, 0px));
+  animation: fadeIn .3s ease;
+  touch-action: pan-y;
+}
+.onboard-slide.pic { display: flex; flex-direction: column; align-items: center; gap: 22px; padding-top: 4px; overflow: hidden; }
+.coach-cap { text-align: center; padding: 0 8px; }
+.coach-title { margin-top: 6px; font-size: 20px; font-weight: 500; }
+/* a still picture of part of the settings screen — nothing in it can be pressed */
+.mock {
+  width: min(380px, 100%); pointer-events: none;
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 16px 16px 18px; border-radius: 24px;
+  background: var(--sheet); border: 1px solid var(--glass-edge);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.3);
+}
+.mock h3 { margin: 0; font-size: 12px; font-weight: 400; letter-spacing: .14em; color: var(--ink-soft); }
+.mock .dim { opacity: .35; }
+.mk-hl { position: relative; display: flex; flex-direction: column; gap: 6px; margin: 6px 0 0; }
+.mk-hl::after {
+  content: ""; position: absolute; inset: -7px; border-radius: 20px;
+  border: 1.5px dashed rgba(255,255,255,.6);
+}
+.mk-label { word-break: keep-all; font-size: 14px; line-height: 1.5; color: var(--ink); margin: 6px 0 8px; }
+.mk-input {
+  flex: 1; min-width: 0; font-size: 15px; color: var(--ink-soft);
+  background: rgba(0,0,0,.18); border: 1px solid rgba(255,255,255,.25);
+  border-radius: 12px; padding: 9px 12px;
+}
+.mk-range { flex: 1; height: 4px; border-radius: 4px; position: relative; background: rgba(255,255,255,.25); }
+.mk-range::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 75%; border-radius: 4px; background: var(--plus); }
+.mk-range::after { content: ""; position: absolute; left: 75%; top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: var(--plus); }
+.mock .done-toggle .chev { transform: rotate(90deg); }
+.mock .done-thumb.t2 { background: linear-gradient(145deg, #8fb0c9, #c7a6d9 50%, #e7b8a0); }
+@media (max-height: 640px) {
+  .onboard-slide.pic { gap: 12px; }
+  .mock { padding: 12px 14px 14px; gap: 8px; }
+  .mock .done-item:nth-child(2) { display: none; }
+}
+.onboard-skip {
+  position: relative; z-index: 1;
+  align-self: flex-end; margin: 0 16px 8px;
+  appearance: none; background: transparent; border: 0; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--ink-soft); padding: 4px 6px;
+}
+.onboard-skip.gone { visibility: hidden; }
+.onboard-viewport { position: relative; z-index: 1; flex: 1; min-height: 0; overflow: hidden; }
+.onboard-track { display: flex; height: 100%; transition: transform .35s cubic-bezier(.2,.8,.2,1); }
+.onboard-slide { flex: 0 0 100%; height: 100%; box-sizing: border-box; padding: 0 16px; }
+.onboard-slide.basics { display: grid; grid-template-rows: 1fr auto 1fr; }
+.onboard-slide.feature { display: flex; flex-direction: column; justify-content: center; gap: 26px; padding: 0 24px; }
+.slide-head { text-align: center; }
+.slide-eyebrow { font-size: 12px; letter-spacing: .2em; color: var(--plus); }
+.slide-title { margin: 10px 0 0; font-size: clamp(24px, 7vw, 30px); font-weight: 500; line-height: 1.35; }
+.slide-list { list-style: none; margin: 0 auto; padding: 0; display: flex; flex-direction: column; gap: 10px; width: min(420px, 100%); }
+.slide-list li {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 14px 16px; border-radius: 18px;
+  background: linear-gradient(145deg, var(--glass-strong), var(--glass));
+  border: 1px solid rgba(255,255,255,.28);
+}
+.slide-list b { font-size: 15px; font-weight: 500; }
+.slide-list span { font-size: 13px; line-height: 1.55; color: var(--ink-soft); }
+.onboard-foot { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 14px; padding-top: 16px; }
+.onboard-dots { display: flex; gap: 8px; }
+.onboard-dots span { width: 7px; height: 7px; border-radius: 999px; background: rgba(255,255,255,.3); transition: width .25s ease, background .25s ease; }
+.onboard-dots span.on { width: 22px; background: var(--ink); }
+.onboard-half {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  text-align: center; border-radius: 24px;
+  border: 1.5px dashed rgba(255,255,255,.28);
+}
+.onboard-half.top { margin-bottom: 10px; }
+.onboard-half.bottom { margin-top: 10px; }
+.onboard-sign { font-family: var(--font-num); font-size: 44px; font-weight: 400; line-height: 1; }
+.onboard-half.top .onboard-sign { color: var(--plus); }
+.onboard-half.bottom .onboard-sign { color: var(--minus); }
+.onboard-text { font-size: 16px; line-height: 1.55; }
+.onboard-text.small { font-size: 13px; color: var(--ink-soft); }
+.onboard-note { font-size: 12px; line-height: 1.6; color: var(--ink-soft); }
+.onboard-mid { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 8px 0; }
+.onboard-chips { display: grid; grid-template-columns: repeat(2, auto); justify-content: center; gap: 6px; }
+.onboard-chips span { text-align: center; }
+.onboard-chips span {
+  font-size: 12px; padding: 4px 10px; border-radius: 999px;
+  color: var(--ink); background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.22);
+}
+.onboard-pill {
+  font-size: 14px; padding: 5px 14px; border-radius: 999px;
+  background: var(--glass); border: 1px solid rgba(255,255,255,.4);
+}
+.onboard-go {
+  appearance: none; cursor: pointer; min-width: 150px;
+  font: inherit; font-size: 15px; font-weight: 500;
+  padding: 12px 34px; border-radius: 999px;
+  color: #3a2530; border: 1px solid rgba(255, 240, 220, .9);
+  background: linear-gradient(145deg, #ffe9c7, #ffc9a8);
+}
+.onboard-go:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+.count-row input {
+  flex: 1; min-width: 0;
+  font-family: var(--font-num); font-size: 18px; font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  background: rgba(0,0,0,.18);
+  border: 1px solid rgba(255,255,255,.25);
+  border-radius: 12px;
+  padding: 9px 12px;
+  outline: none;
+}
+.count-row input:focus { border-color: var(--ink); }
+.count-row input::placeholder { color: rgba(255,253,249,.4); }
+.slider-row { display: flex; align-items: center; gap: 12px; }
+.slider-row input[type="range"] { flex: 1; min-width: 0; accent-color: #ffe3b8; }
+.slider-row output { font-family: var(--font-num); font-variant-numeric: tabular-nums; width: 3.2em; text-align: right; }
+.slider-row.off { opacity: .4; }
+.note { font-size: 12px; color: var(--ink-soft); margin: 0; }
+#file, #importFile { display: none; }
+
+.toast {
+  position: fixed; left: 50%; top: calc(20px + env(safe-area-inset-top, 0px));
+  transform: translate(-50%, -8px);
+  padding: 8px 16px; border-radius: 18px;
+  font-size: 13px;
+  background: var(--glass-strong);
+  border: 1px solid var(--glass-edge);
+  -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  opacity: 0; pointer-events: none;
+  transition: opacity .25s ease, transform .25s ease;
+  z-index: 10;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  text-align: center;
+  line-height: 1.45;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+@media (prefers-reduced-motion: reduce) {
+  .colon { animation: none; }
+  .ripple, .pop { animation-duration: .01s; }
+  .num { transition: color .2s ease; }
+  .num.up, .num.down { transform: none; }
+  .sheet { transition: none; }
+  .celebrate, .celebrate-card, .confetti, .onboard { animation-duration: .01s; }
+  .onboard-track { transition: none; }
+  .hold-ring.run circle { animation-duration: var(--hold, 450ms); }
+}
+</style>
+</head>
+<body><div class="bg" id="bg"></div>
+<div class="knit"></div>
+<div class="shade"></div>
+
+<main class="stage" id="stage" aria-label="카운터 화면. 위쪽 절반을 누르면 올라가고 아래쪽 절반을 누르면 내려갑니다.">
+  <div class="guide h"></div>
+  <div class="hint top" aria-hidden="true">+</div>
+  <div class="hint bottom" aria-hidden="true">−<span class="hint-sub">길게</span></div>
+
+  <div class="counter-wrap">
+    <div class="project-name" id="projLabel">첫 프로젝트</div>
+    <div class="counter" id="counter" role="status" aria-live="polite">
+      <div class="num" id="num"><span>0</span><span>0</span><span>0</span></div>
+    </div>
+  </div>
+</main>
+
+<button type="button" class="menu-btn" id="menuBtn" aria-label="프로젝트와 설정 열기">⋯</button>
+<button type="button" class="back-btn" id="backBtn" hidden>‹ 나가기</button>
+<div class="showcase-card" id="showcase" role="button" tabindex="0" aria-label="작품 편집 열기" hidden>
+  <div class="sc-eyebrow">완성한 작품</div>
+  <div class="sc-name" id="scName"></div>
+  <div class="sc-period" id="scPeriod"></div>
+  <span class="sc-edit" aria-hidden="true">편집</span>
+</div>
+
+<div class="backdrop" id="backdrop"></div>
+<aside class="sheet" id="sheet" aria-label="프로젝트와 설정" aria-hidden="true">
+  <div class="sheet-head">
+    <h2>프로젝트와 설정</h2>
+    <button type="button" class="btn ghost" id="closeBtn">닫기</button>
+  </div>
+  <div class="backup-banner" id="backupBanner" role="status" hidden>
+    <span class="backup-banner-text" id="backupBannerText"></span>
+    <button type="button" class="btn" id="bannerBackup">지금 백업</button>
+  </div>
+
+  <section class="section">
+    <h3>프로젝트</h3>
+    <div class="projects" id="projList"></div>
+    <div class="row add-row">
+      <button type="button" class="btn add" id="addProj"><span class="plus-mark" aria-hidden="true">+</span>새 프로젝트</button>
+    </div>
+    <button type="button" class="done-toggle" id="doneToggle" aria-expanded="false" aria-controls="donePanel">
+      <span>완성한 작품</span><span class="done-toggle-count" id="doneCount">0</span><span class="chev" aria-hidden="true">›</span>
+    </button>
+    <div class="done-panel" id="donePanel" hidden>
+      <p class="done-summary" id="doneSummary"></p>
+      <div class="done-list" id="doneList"></div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h3>지금 프로젝트</h3>
+    <div class="field">
+      <label for="projName">이름</label>
+      <input type="text" id="projName" maxlength="40" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="startInput">시작한 날</label>
+      <div class="date-field"><span class="date-display" aria-hidden="true"></span><input type="date" id="startInput" class="date-input"></div>
+    </div>
+    <div class="field">
+      <label for="setCount">현재 단수 직접 입력</label>
+      <form class="count-row" id="countForm">
+        <input type="text" id="setCount" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" placeholder="예: 300">
+        <button type="submit" class="btn">적용</button>
+      </form>
+    </div>
+    <button type="button" class="btn finish" id="doneBtn">이 프로젝트 완성!</button>
+    <div class="row">
+      <button type="button" class="btn" id="reset">초기화</button>
+      <button type="button" class="btn" id="delProj">프로젝트 삭제</button>
+    </div>
+  </section>
+
+  <section class="section">
+    <h3>배경</h3>
+    <div class="row">
+      <button type="button" class="btn" id="pick">사진 고르기</button>
+      <button type="button" class="btn" id="plain">기본 배경</button>
+    </div>
+    <div class="field">
+      <label for="opacity">사진 불투명도</label>
+      <div class="slider-row" id="opRow">
+        <input type="range" id="opacity" min="20" max="100" step="5" value="80">
+        <output id="opOut" for="opacity">80%</output>
+      </div>
+    </div>
+    <p class="note" id="opNote">배경은 프로젝트마다 따로 저장돼요. 사진이 복잡하면 불투명도를 낮춰 보세요.</p>
+  </section>
+
+  <section class="section">
+    <h3>백업</h3>
+    <div class="row">
+      <button type="button" class="btn" id="exportBtn">백업 파일 저장</button>
+      <button type="button" class="btn" id="importBtn">백업 불러오기</button>
+    </div>
+    <p class="backup-status" id="backupStatus" hidden></p>
+    <p class="note" id="backupNote">모든 프로젝트와 사진을 파일 하나로 저장해요. 폰을 바꾸기 전에 저장해 두면 새 폰에서 불러올 수 있어요.</p>
+  </section>
+
+  <section class="section" id="premiumSection" hidden>
+    <h3>프리미엄</h3>
+    <div class="premium-card" id="premiumOffer">
+      <div class="premium-title">한 번 결제로 계속 써요</div>
+      <ul class="premium-list">
+        <li>설정창의 광고가 사라져요</li>
+        <li>완성한 작품을 개수 제한 없이 모아요</li>
+      </ul>
+      <button type="button" class="btn premium-buy" id="premiumBuy"><span class="premium-price">1,000원</span>으로 업그레이드</button>
+    </div>
+    <div class="premium-card" id="premiumOwned" hidden>
+      <div class="premium-done">프리미엄을 쓰고 있어요. 광고 없이, 완성 목록은 무제한이에요. 고마워요 🧶</div>
+    </div>
+  </section>
+
+  <footer class="app-info" id="appInfo">
+    <div class="app-info-name">단단 <span id="appVersion"></span></div>
+    <button type="button" class="btn ghost mini guide-again" id="guideAgain">사용법 다시 보기</button>
+    <a class="app-info-link web-only" id="getApp" href="https://play.google.com/store/apps/details?id=com.niaxcroknit.dandan" target="_blank" rel="noopener" hidden>안드로이드 앱으로 받기</a>
+    <div class="app-info-row" id="contactRow" hidden>
+      <span>문의</span>
+      <span class="app-info-mail" id="contactMail"></span>
+      <button type="button" class="btn ghost mini" id="copyMail">복사</button>
+    </div>
+    <a class="app-info-link" id="privacyLink" href="#" target="_blank" rel="noopener" hidden>개인정보처리방침</a>
+    <button type="button" class="btn ghost mini guide-again" id="adPrivacy" hidden>광고 개인정보 설정</button>
+  </footer>
+</aside>
+<aside class="sheet" id="showSheet" aria-label="작품 편집" aria-hidden="true">
+  <div class="sheet-head">
+    <button type="button" class="btn ghost back-link" id="scBack">‹ 나가기</button>
+    <h2>작품 편집</h2>
+    <button type="button" class="btn ghost" id="scClose">닫기</button>
+  </div>
+  <section class="section">
+    <div class="field">
+      <label for="scNameInput">이름</label>
+      <input type="text" id="scNameInput" maxlength="40" autocomplete="off">
+    </div>
+    <div class="date-pair">
+      <div class="field">
+        <label for="scStart">시작한 날</label>
+        <div class="date-field"><span class="date-display" aria-hidden="true"></span><input type="date" id="scStart" class="date-input"></div>
+      </div>
+      <div class="field">
+        <label for="scEnd">완성한 날</label>
+        <div class="date-field"><span class="date-display" aria-hidden="true"></span><input type="date" id="scEnd" class="date-input"></div>
+      </div>
+    </div>
+  </section>
+  <section class="section">
+    <h3>작품 사진</h3>
+    <div class="row">
+      <button type="button" class="btn" id="scPick">사진 고르기</button>
+      <button type="button" class="btn" id="scPlain">기본 배경</button>
+    </div>
+    <p class="note">완성한 작품 사진을 올려 두면 목록에서 한눈에 볼 수 있어요.</p>
+  </section>
+  <section class="section">
+    <div class="row">
+      <button type="button" class="btn" id="scRevive">다시 뜨기</button>
+      <button type="button" class="btn" id="scDel">기록 삭제</button>
+    </div>
+  </section>
+</aside>
+<input type="file" id="file" accept="image/*">
+<input type="file" id="importFile" accept=".json,application/json">
+<div class="toast" id="toast"></div>
+<div class="hold-ring" id="holdRing" aria-hidden="true" hidden><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="44"></circle></svg></div>
+<div class="onboard" id="onboard" role="dialog" aria-modal="true" aria-label="단단 사용법" hidden>
+  <button type="button" class="onboard-skip" id="onboardSkip">건너뛰기</button>
+  <div class="onboard-viewport" id="onboardViewport">
+    <div class="onboard-track" id="onboardTrack">
+      <section class="onboard-slide basics" aria-label="1 / 5 기본 사용법">
+        <div class="onboard-half top">
+          <div class="onboard-sign">+1</div>
+          <div class="onboard-text">위쪽이나 숫자를 <b>톡</b> 누르면<br>한 단 올라가요</div>
+        </div>
+        <div class="onboard-mid">
+          <div class="onboard-pill">프로젝트 이름</div>
+          <div class="onboard-text small">프로젝트 이름을 누르면 프로젝트와 설정이 열려요</div>
+        </div>
+        <div class="onboard-half bottom">
+          <div class="onboard-sign">−1</div>
+          <div class="onboard-text">아래쪽을 <b>길게</b> 누르면<br>한 단 내려가요</div>
+          <div class="onboard-note">실수로 내려가지 않게 길게 눌러야 해요<br>한 번에 많이 내리려면 설정에서 단수를 직접 입력할 수 있어요</div>
+        </div>
+      </section>
+
+      <section class="onboard-slide pic" aria-label="2 / 5 프로젝트">
+        <div class="coach-cap"><div class="slide-eyebrow">프로젝트 이름을 누르면 열려요</div><div class="coach-title">프로젝트마다 따로 세요</div></div>
+        <div class="mock" aria-hidden="true">
+          <h3>프로젝트</h3>
+          <div class="mk-hl"><div class="projects">
+            <div class="proj active"><span class="pname">스웨터</span><span class="pcount">042</span></div>
+            <div class="proj"><span class="pname">양말</span><span class="pcount">118</span></div>
+          </div></div>
+          <div class="mk-label">눌러서 다른 프로젝트로 바꿔요</div>
+          <div class="mk-hl"><div class="btn add"><span class="plus-mark">+</span>새 프로젝트</div></div>
+          <div class="mk-label">새 작품을 시작해요</div>
+        </div>
+      </section>
+      <section class="onboard-slide pic" aria-label="3 / 5 단수 입력과 완성">
+        <div class="coach-cap"><div class="slide-eyebrow">설정</div><div class="coach-title">단수 입력과 완성</div></div>
+        <div class="mock" aria-hidden="true">
+          <h3>지금 프로젝트</h3>
+          <div class="mk-hl"><div class="field"><label>현재 단수 직접 입력</label>
+            <div class="count-row"><span class="mk-input">예: 300</span><span class="btn">적용</span></div></div></div>
+          <div class="mk-label">이미 떠 둔 단수나 한 번에 많이 고칠 땐 숫자로 입력해요</div>
+          <div class="mk-hl"><div class="btn finish" style="text-align:center">이 프로젝트 완성!</div></div>
+          <div class="mk-label">다 뜨면 눌러서 완성 목록으로 옮겨요</div>
+        </div>
+      </section>
+      <section class="onboard-slide pic" aria-label="4 / 5 완성한 작품">
+        <div class="coach-cap"><div class="slide-eyebrow">설정</div><div class="coach-title">완성한 작품 모아 보기</div></div>
+        <div class="mock" aria-hidden="true">
+          <div class="mk-hl">
+            <div class="done-toggle"><span>완성한 작품</span><span class="done-toggle-count">2</span><span class="chev">›</span></div>
+            <div class="done-list">
+              <div class="done-item"><div class="done-thumb">✓</div><div class="done-body"><div class="done-name">목도리</div><div class="done-meta">2026.08.02 – 2026.09.10 · 40일</div></div></div>
+              <div class="done-item"><div class="done-thumb t2">✓</div><div class="done-body"><div class="done-name">코바늘 가방</div><div class="done-meta">2026.07.01 – 2026.07.20 · 20일</div></div></div>
+            </div>
+          </div>
+          <div class="mk-label">완성한 작품을 사진과 기간으로 모아 봐요 (10개)</div>
+        </div>
+      </section>
+      <section class="onboard-slide pic" aria-label="5 / 5 배경 사진과 백업">
+        <div class="coach-cap"><div class="slide-eyebrow">설정</div><div class="coach-title">배경 사진과 백업</div></div>
+        <div class="mock" aria-hidden="true">
+          <h3>배경</h3>
+          <div class="mk-hl">
+            <div class="row"><span class="btn">사진 고르기</span><span class="btn">기본 배경</span></div>
+            <div class="slider-row"><span class="mk-range"></span><output>80%</output></div>
+          </div>
+          <div class="mk-label">프로젝트마다 좋아하는 사진을 배경으로 쓰고, 투명도를 조절할 수 있어요</div>
+          <h3>백업</h3>
+          <div class="mk-hl"><div class="row"><span class="btn">백업 파일 저장</span><span class="btn">백업 불러오기</span></div></div>
+          <div class="mk-label">기록을 파일로 저장해 새 폰에서도 그대로 불러와요</div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <div class="onboard-foot">
+    <div class="onboard-dots" id="onboardDots" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+    <button type="button" class="onboard-go" id="onboardGo">다음</button>
+  </div>
+</div>
+<div class="limit-dialog" id="limitDialog" role="dialog" aria-modal="true" aria-labelledby="limitTitle" hidden>
+  <div class="limit-card">
+    <div class="limit-count" id="limitCount">10 / 10</div>
+    <h2 class="limit-title" id="limitTitle">완성 목록이 가득 찼어요</h2>
+    <p class="limit-text">완성 목록에는 작품을 10개까지 담을 수 있어요. 예전 작품을 하나 정리하면 이 작품을 완성 목록에 넣을 수 있어요.</p>
+    <p class="limit-text soft">지금 프로젝트는 그대로 남아 있으니 계속 이어서 세도 돼요.</p>
+    <div class="limit-actions">
+      <button type="button" class="btn limit-buy" id="limitBuy" hidden><span class="premium-price">1,000원</span>으로 무제한 + 광고 제거</button>
+      <button type="button" class="btn limit-primary" id="limitTidy">예전 작품 정리하기</button>
+      <button type="button" class="btn ghost" id="limitClose">닫기</button>
+    </div>
+  </div>
+</div>
+<div class="celebrate" id="celebrate" aria-live="polite" hidden>
+  <div class="celebrate-card">
+    <div class="celebrate-eyebrow">완성</div>
+    <div class="celebrate-name" id="celebrateName"></div>
+    <div class="celebrate-meta" id="celebrateMeta"></div>
+  </div>
+</div>
+
+<script>
+(window.__appReady || Promise.resolve()).then(function () {
+  var KEY = "glass-knit-counter-v2";
+  var OLD_KEY = "glass-knit-counter-v1";
+  var BG_KEY = "glass-knit-counter-bg-v1";
+  var OP_KEY = "glass-knit-counter-op-v1";
+
+  function uid() { return "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+
+  var data = null;
+  try { data = JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) {}
+  if (!data || !Array.isArray(data.projects) || !data.projects.length) {
+    var first = { id: uid(), name: "첫 프로젝트", n: 0, createdAt: new Date().toISOString() };
+    try {
+      var old = JSON.parse(localStorage.getItem(OLD_KEY) || "null");
+      if (old && typeof old.l === "number") first.n = old.l;
+    } catch (e) {}
+    data = { current: first.id, projects: [first] };
+  }
+  // earlier versions stored two numbers (l:r); keep the left one as the single count
+  data.projects.forEach(function (p) {
+    if (typeof p.n !== "number") p.n = typeof p.l === "number" ? p.l : 0;
+    delete p.l; delete p.r;
+  });
+  // remembers when the records last changed, so the settings can say whether a backup is out of date
+  var savedSig = null;
+  function sig() { return JSON.stringify(data, function (k, v) { return k === "_tempBg" || k === "changedAt" ? undefined : v; }); }
+  function save() {
+    var now = sig();
+    if (savedSig !== null && now !== savedSig) data.changedAt = new Date().toISOString();
+    savedSig = now;
+    try { localStorage.setItem(KEY, JSON.stringify(data, function (k, v) { return k === "_tempBg" ? undefined : v; })); } catch (e) {}
+  }
+  function active() { return data.projects.filter(function (x) { return !x.done; }); }
+  function finished() {
+    return data.projects.filter(function (x) { return x.done; })
+      .sort(function (a, b) { return String(b.doneAt || "").localeCompare(String(a.doneAt || "")); });
+  }
+  function nextName() { return "새 프로젝트 " + (data.projects.length + 1); }
+  function cur() {
+    var p = data.projects.find(function (x) { return x.id === data.current && !x.done; });
+    if (!p) {
+      p = active()[0];
+      if (!p) { p = { id: uid(), name: nextName(), n: 0, createdAt: new Date().toISOString() }; data.projects.push(p); }
+      data.current = p.id;
+    }
+    return p;
+  }
+
+  var numEl = document.getElementById("num");
+  var counter = document.getElementById("counter");
+  var stage = document.getElementById("stage");
+  var projLabel = document.getElementById("projLabel");
+
+  function pad(n) { return n < 1000 ? ("00" + n).slice(-3) : String(n); }
+  function paint(el, n) {
+    el.innerHTML = pad(n).split("").map(function (d) { return "<span>" + d + "</span>"; }).join("");
+  }
+  function render() {
+    var p = cur();
+    paint(numEl, p.n);
+    if (!showing && shownBgFor !== p.id) applyBg(p);
+    projLabel.textContent = p.name || "이름 없는 프로젝트";
+  }
+
+  function bump(el, cls) {
+    el.classList.remove("up", "down", "floor");
+    void el.offsetWidth;
+    el.classList.add(cls);
+    clearTimeout(el._t);
+    el._t = setTimeout(function () { el.classList.remove(cls); }, cls === "floor" ? 380 : 220);
+    counter.classList.add("flash");
+    clearTimeout(counter._t);
+    counter._t = setTimeout(function () { counter.classList.remove("flash"); }, 240);
+  }
+
+  function effect(x, y, kind, text) {
+    var r = document.createElement("div");
+    r.className = "ripple " + kind;
+    r.style.left = x + "px"; r.style.top = y + "px";
+    stage.appendChild(r);
+    setTimeout(function () { r.remove(); }, 750);
+    if (text) {
+      var p = document.createElement("div");
+      p.className = "pop " + kind;
+      p.textContent = text;
+      p.style.left = x + "px"; p.style.top = y + "px";
+      stage.appendChild(p);
+      setTimeout(function () { p.remove(); }, 850);
+    }
+  }
+  function buzz(ms) {
+    var N = window.NativeApp;
+    if (N && N.isNative) {
+      var kind = Array.isArray(ms) ? (ms.length > 3 ? "success" : "medium") : (ms >= 40 ? "warning" : "light");
+      N.haptic(kind); return;
+    }
+    try { navigator.vibrate && navigator.vibrate(ms); } catch (e) {}
+  }
+
+  var wake = null;
+  var nativeAwake = false;
+  function keepAwake() {
+    if (window.NativeApp && window.NativeApp.isNative) {
+      if (!nativeAwake) nativeAwake = window.NativeApp.keepAwake();
+      return;
+    }
+    if (wake || !("wakeLock" in navigator)) return;
+    navigator.wakeLock.request("screen").then(function (w) {
+      wake = w; w.addEventListener("release", function () { wake = null; });
+    }).catch(function () {});
+  }
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") keepAwake();
+  });
+
+  function change(delta, x, y) {
+    var p = cur();
+    if (delta > 0) {
+      p.n += 1;
+      bump(numEl, "up"); if (x != null) effect(x, y, "plus", "+1"); buzz(12);
+    } else if (p.n > 0) {
+      p.n -= 1;
+      bump(numEl, "down"); if (x != null) effect(x, y, "minus", "−1"); buzz([8, 30, 8]);
+    } else {
+      bump(numEl, "floor"); if (x != null) effect(x, y, "minus", ""); buzz(40);
+    }
+    render(); save();
+  }
+
+  var quietTimer;
+  var HOLD_MS = 450, MOVE_SLOP = 14;
+  var holdRing = document.getElementById("holdRing");
+  var hold = null, shortTaps = 0;
+  function quiet() {
+    stage.classList.add("quiet");
+    clearTimeout(quietTimer);
+    quietTimer = setTimeout(function () { stage.classList.remove("quiet"); }, 4000);
+  }
+  function stopHold(showHint) {
+    if (!hold) return;
+    clearTimeout(hold.timer);
+    holdRing.hidden = true; holdRing.classList.remove("run");
+    if (showHint && !hold.done) {
+      shortTaps++;
+      if (shortTaps <= 3 || shortTaps % 5 === 0) toast("아래쪽은 길게 눌러야 한 단 내려가요");
+    }
+    hold = null;
+  }
+  stage.addEventListener("pointerdown", function (e) {
+    if (sheetOpen || showing) return;
+    if (e.target.closest && e.target.closest("#projLabel")) return;
+    var rect = stage.getBoundingClientRect();
+    var x = e.clientX - rect.left, y = e.clientY - rect.top;
+    // anywhere on the glass counter itself always counts up
+    var box = counter.getBoundingClientRect();
+    var onCounter = e.clientX >= box.left && e.clientX <= box.right && e.clientY >= box.top && e.clientY <= box.bottom;
+    keepAwake(); quiet();
+    if (onCounter || y < rect.height / 2) { change(1, x, y); return; }
+    // counting down needs a short hold so a stray tap never takes a row away
+    stopHold(false);
+    hold = { id: e.pointerId, sx: e.clientX, sy: e.clientY, x: x, y: y, done: false };
+    holdRing.style.left = e.clientX + "px"; holdRing.style.top = e.clientY + "px";
+    holdRing.style.setProperty("--hold", HOLD_MS + "ms");
+    holdRing.hidden = false; void holdRing.offsetWidth; holdRing.classList.add("run");
+    hold.timer = setTimeout(function () {
+      if (!hold) return;
+      hold.done = true;
+      holdRing.hidden = true; holdRing.classList.remove("run");
+      change(-1, hold.x, hold.y);
+    }, HOLD_MS);
+  });
+  stage.addEventListener("pointermove", function (e) {
+    if (!hold || e.pointerId !== hold.id) return;
+    if (Math.abs(e.clientX - hold.sx) > MOVE_SLOP || Math.abs(e.clientY - hold.sy) > MOVE_SLOP) stopHold(false);
+  });
+  stage.addEventListener("pointerup", function (e) { if (hold && e.pointerId === hold.id) stopHold(true); });
+  stage.addEventListener("pointercancel", function () { stopHold(false); });
+  stage.addEventListener("pointerleave", function () { stopHold(false); });
+  stage.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+
+  document.addEventListener("keydown", function (e) {
+    if (!onboardEl.hidden) {
+      if (e.key === "Escape") closeGuide();
+      else if (e.key === "ArrowRight") showSlide(guideIndex + 1);
+      else if (e.key === "ArrowLeft") showSlide(guideIndex - 1);
+      return;
+    }
+    if (e.key === "Escape") {
+      if (!limitDialog.hidden) { closeLimit(); return; }
+      if (sheetOpen) { closeSheet(); return; }
+      if (showSheetOpen) { closeShowSheet(); return; }
+      if (showing) { leaveShowcase(); return; }
+    }
+    if (sheetOpen || showing) return;
+    if (e.key === "ArrowUp" || e.key === " ") { e.preventDefault(); change(1); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); change(-1); }
+  });
+
+  // ---------- toast ----------
+  var toastEl = document.getElementById("toast"), toastT;
+  function toast(msg) {
+    toastEl.textContent = msg; toastEl.classList.add("show");
+    clearTimeout(toastT); toastT = setTimeout(function () { toastEl.classList.remove("show"); }, 1800);
+  }
+
+  // ---------- sheet ----------
+  var sheet = document.getElementById("sheet");
+  var backdrop = document.getElementById("backdrop");
+  var sheetOpen = false;
+  function openSheet() {
+    sheetOpen = true;
+    renderList();
+    nameInput.value = cur().name;
+    countInput.value = String(cur().n);
+    startInput.value = toInput(cur().createdAt);
+    refreshDates();
+    renderBackupStatus();
+    sheet.classList.add("open"); backdrop.classList.add("open");
+    sheet.setAttribute("aria-hidden", "false");
+    updateAd();
+  }
+  function closeSheet() {
+    sheetOpen = false;
+    sheet.classList.remove("open"); backdrop.classList.remove("open");
+    sheet.setAttribute("aria-hidden", "true");
+    updateAd();
+    disarmAll();
+    if (document.activeElement) document.activeElement.blur();
+  }
+  projLabel.setAttribute("role", "button");
+  projLabel.setAttribute("tabindex", "0");
+  projLabel.setAttribute("aria-label", "프로젝트와 설정 열기");
+  projLabel.addEventListener("click", function () { if (!showing) openSheet(); });
+  projLabel.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); if (!showing) openSheet(); }
+  });
+  document.getElementById("menuBtn").addEventListener("click", function () { if (showing) openShowSheet(); else openSheet(); });
+  document.getElementById("closeBtn").addEventListener("click", closeSheet);
+  backdrop.addEventListener("click", function () { closeSheet(); closeShowSheet(); });
+
+  // ---------- projects ----------
+  var listEl = document.getElementById("projList");
+  var nameInput = document.getElementById("projName");
+  var countInput = document.getElementById("setCount");
+  var startInput = document.getElementById("startInput");
+  startInput.addEventListener("change", function () {
+    var p = cur();
+    if (startInput.value) p.createdAt = fromInput(startInput.value); else delete p.createdAt;
+    save();
+  });
+  document.getElementById("countForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var raw = countInput.value.replace(/[^0-9]/g, "");
+    if (raw === "") { toast("숫자를 입력해 주세요"); countInput.focus(); return; }
+    var v = Math.min(parseInt(raw, 10), 999999);
+    var p = cur(); p.n = v;
+    save(); render(); renderList();
+    countInput.value = String(v); countInput.blur();
+    toast("‘" + (p.name || "이 프로젝트") + "’를 " + pad(v) + "단으로 맞췄어요");
+  });
+  function renderList() {
+    listEl.innerHTML = "";
+    if (document.activeElement !== countInput) countInput.value = String(cur().n);
+    startInput.value = toInput(cur().createdAt);
+    refreshDates();
+    active().forEach(function (p) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "proj" + (p.id === data.current ? " active" : "");
+      var n = document.createElement("span"); n.className = "pname"; n.textContent = p.name || "이름 없는 프로젝트";
+      var c = document.createElement("span"); c.className = "pcount"; c.textContent = pad(p.n);
+      b.appendChild(n); b.appendChild(c);
+      b.addEventListener("click", function () {
+        data.current = p.id;
+        if (showing) exitShowcase(false);
+        save(); render(); renderList();
+        nameInput.value = p.name; disarmAll();
+        toast("‘" + (p.name || "이름 없는 프로젝트") + "’로 바꿨어요");
+      });
+      listEl.appendChild(b);
+    });
+    renderDone();
+  }
+  document.getElementById("addProj").addEventListener("click", function () {
+    var p = { id: uid(), name: nextName(), n: 0, createdAt: new Date().toISOString() };
+    data.projects.push(p); data.current = p.id;
+    if (showing) exitShowcase(false);
+    save(); render(); renderList();
+    nameInput.value = p.name;
+    nameInput.focus(); nameInput.select();
+  });
+  nameInput.addEventListener("input", function () {
+    cur().name = nameInput.value.trim();
+    save(); render(); renderList();
+  });
+
+  // two-tap confirm helper
+  var armed = {};
+  function twoTap(btn, idle, confirmText, action) {
+    btn.addEventListener("click", function () {
+      if (!btn.classList.contains("armed")) {
+        disarmAll();
+        btn.classList.add("armed"); btn.textContent = confirmText;
+        armed[btn.id] = setTimeout(function () { btn.classList.remove("armed"); btn.textContent = idle; }, 3000);
+        return;
+      }
+      clearTimeout(armed[btn.id]);
+      btn.classList.remove("armed"); btn.textContent = idle;
+      action();
+    });
+    btn._idle = idle;
+  }
+  function disarmAll() {
+    document.querySelectorAll(".btn.armed").forEach(function (b) {
+      clearTimeout(armed[b.id]); b.classList.remove("armed"); b.textContent = b._idle;
+    });
+  }
+  twoTap(document.getElementById("reset"), "초기화", "한 번 더 누르면 000", function () {
+    var p = cur(); p.n = 0; save(); render(); renderList();
+    toast("000으로 돌렸어요");
+  });
+  twoTap(document.getElementById("delProj"), "프로젝트 삭제", "한 번 더 누르면 삭제", function () {
+    var p = cur();
+    var gone = p.name || "이름 없는 프로젝트";
+    try { localStorage.removeItem(bgKey(p.id)); } catch (e) {}
+    shownBgFor = null;
+    if (active().length === 1) {
+      p.name = "첫 프로젝트"; p.n = 0; delete p.op; p.createdAt = new Date().toISOString();
+    } else {
+      data.projects = data.projects.filter(function (x) { return x.id !== p.id; });
+      data.current = active()[0].id;
+    }
+    save(); render(); renderList(); nameInput.value = cur().name;
+    toast("‘" + gone + "’를 지웠어요");
+  });
+
+  // ---------- completed projects ----------
+  var doneToggle = document.getElementById("doneToggle");
+  var donePanel = document.getElementById("donePanel");
+  var doneListEl = document.getElementById("doneList");
+  function fmtDate(iso) {
+    var d = new Date(iso); if (isNaN(d)) return "";
+    return d.getFullYear() + "." + ("0" + (d.getMonth() + 1)).slice(-2) + "." + ("0" + d.getDate()).slice(-2);
+  }
+  function daysBetween(a, b) {
+    var x = new Date(a), y = new Date(b); if (isNaN(x) || isNaN(y)) return null;
+    return Math.max(1, Math.round((y - x) / 86400000) + 1);
+  }
+  function photoOf(p) {
+    var u = null; try { u = localStorage.getItem(bgKey(p.id)); } catch (e) {}
+    return u || p._tempBg || null;
+  }
+  function refreshDates() {
+    document.querySelectorAll(".date-field").forEach(function (box) {
+      var inp = box.querySelector("input"), out = box.querySelector(".date-display");
+      var v = inp.value;
+      if (v) { var m = v.split("-"); out.textContent = m[0] + "." + m[1] + "." + m[2]; out.classList.remove("empty"); }
+      else { out.textContent = "날짜 고르기"; out.classList.add("empty"); }
+    });
+  }
+  document.addEventListener("input", function (e) { if (e.target.classList && e.target.classList.contains("date-input")) refreshDates(); });
+  document.addEventListener("change", function (e) { if (e.target.classList && e.target.classList.contains("date-input")) setTimeout(refreshDates, 0); });
+  function toInput(iso) {
+    var d = new Date(iso); if (!iso || isNaN(d)) return "";
+    return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2);
+  }
+  function fromInput(v) { return v ? new Date(v + "T12:00:00").toISOString() : null; }
+  function periodText(p) {
+    if (p.createdAt && p.doneAt) {
+      var days = daysBetween(p.createdAt, p.doneAt);
+      return fmtDate(p.createdAt) + " – " + fmtDate(p.doneAt) + (days ? " · " + days + "일" : "");
+    }
+    if (p.doneAt) return fmtDate(p.doneAt) + " 완성";
+    return "";
+  }
+  // Free version keeps up to 10 finished pieces. Existing records are never hidden or removed;
+  // the limit only applies when adding a new one. premium (one in-app purchase) removes the limit and the ads.
+  var FREE_DONE_LIMIT = 10;
+  function isPremium() {
+    try { return localStorage.getItem("glass-knit-counter-premium-v1") === "1"; } catch (e) { return false; }
+  }
+  // banner only while the settings sheet is the thing on screen
+  function updateAd() {
+    var N = window.NativeApp;
+    if (!N || !N.ads) return;
+    var guideOpen = typeof onboardEl !== "undefined" && onboardEl && !onboardEl.hidden;
+    var limitOpen = typeof limitDialog !== "undefined" && limitDialog && !limitDialog.hidden;
+    N.ads.setVisible(sheetOpen && !guideOpen && !limitOpen && !isPremium());
+  }
+  function doneFull() { return !isPremium() && finished().length >= FREE_DONE_LIMIT; }
+  function renderDone() {
+    var list = finished();
+    document.getElementById("doneCount").textContent = isPremium() ? list.length : list.length + " / " + FREE_DONE_LIMIT;
+    document.getElementById("doneSummary").textContent = list.length
+      ? "지금까지 " + list.length + "개를 완성했어요. 작품을 누르면 크게 볼 수 있어요."
+        + (!isPremium() && list.length >= FREE_DONE_LIMIT ? " 완성 목록이 가득 찼어요." : "")
+      : "";
+    doneListEl.innerHTML = "";
+    if (!list.length) {
+      var e = document.createElement("p"); e.className = "done-empty";
+      e.textContent = "아직 완성한 작품이 없어요. 다 뜬 프로젝트에서 ‘이 프로젝트 완성!’을 누르면 여기에 모여요.";
+      doneListEl.appendChild(e); return;
+    }
+    list.forEach(function (p) {
+      var item = document.createElement("button"); item.type = "button"; item.className = "done-item";
+      var th = document.createElement("div"); th.className = "done-thumb";
+      var ph = photoOf(p);
+      if (ph) th.style.backgroundImage = "url(\"" + ph + "\")"; else th.textContent = "✓";
+      var body = document.createElement("div"); body.className = "done-body";
+      var nm = document.createElement("div"); nm.className = "done-name"; nm.textContent = p.name || "이름 없는 프로젝트";
+      var meta = document.createElement("div"); meta.className = "done-meta"; meta.textContent = periodText(p);
+      body.appendChild(nm); body.appendChild(meta);
+      item.appendChild(th); item.appendChild(body);
+      item.addEventListener("click", function () { openShowcase(p); });
+      doneListEl.appendChild(item);
+    });
+  }
+
+  // ---------- showcase: a finished piece shown full screen ----------
+  var showing = null;
+  var showcaseEl = document.getElementById("showcase");
+  var backBtn = document.getElementById("backBtn");
+  var showSheet = document.getElementById("showSheet");
+  var showSheetOpen = false;
+  function fillShowcase() {
+    if (!showing) return;
+    document.getElementById("scName").textContent = showing.name || "이름 없는 프로젝트";
+    document.getElementById("scPeriod").textContent = periodText(showing);
+  }
+  function showFull() { document.documentElement.style.setProperty("--photo-op", 1); }
+  function openShowcase(p) {
+    showing = p;
+    closeSheet();
+    document.body.classList.add("showcase");
+    applyBg(p); showFull();
+    fillShowcase();
+    showcaseEl.hidden = false; backBtn.hidden = false;
+  }
+  // back to the finished list, keeping the piece on screen behind it
+  function goToList() {
+    closeShowSheet();
+    openSheet();
+    donePanel.hidden = false; doneToggle.setAttribute("aria-expanded", "true");
+  }
+  function exitShowcase(backToList) {
+    closeShowSheet();
+    showing = null;
+    document.body.classList.remove("showcase");
+    showcaseEl.hidden = true; backBtn.hidden = true;
+    shownBgFor = null;
+    render();
+    if (backToList) {
+      openSheet();
+      donePanel.hidden = false; doneToggle.setAttribute("aria-expanded", "true");
+    }
+  }
+  function openShowSheet() {
+    if (!showing) return;
+    showSheetOpen = true;
+    document.getElementById("scNameInput").value = showing.name || "";
+    document.getElementById("scStart").value = toInput(showing.createdAt);
+    document.getElementById("scEnd").value = toInput(showing.doneAt);
+    refreshDates();
+    showSheet.classList.add("open"); backdrop.classList.add("open");
+    showSheet.setAttribute("aria-hidden", "false");
+  }
+  function closeShowSheet() {
+    if (!showSheetOpen) return;
+    showSheetOpen = false;
+    showSheet.classList.remove("open"); backdrop.classList.remove("open");
+    showSheet.setAttribute("aria-hidden", "true");
+    disarmAll();
+    if (document.activeElement) document.activeElement.blur();
+  }
+  function leaveShowcase() {
+    var top = active()[0];
+    if (top) data.current = top.id;
+    save();
+    exitShowcase(false);
+  }
+  backBtn.addEventListener("click", leaveShowcase);
+  showcaseEl.addEventListener("click", openShowSheet);
+  showcaseEl.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openShowSheet(); }
+  });
+  document.getElementById("scClose").addEventListener("click", closeShowSheet);
+  document.getElementById("scBack").addEventListener("click", leaveShowcase);
+  document.getElementById("scNameInput").addEventListener("input", function (e) {
+    if (!showing) return;
+    showing.name = e.target.value.trim(); save(); fillShowcase();
+  });
+  function setDates(which, v) {
+    if (!showing) return;
+    var start = which === "start" ? fromInput(v) : showing.createdAt;
+    var end = which === "end" ? fromInput(v) : showing.doneAt;
+    if (which === "end" && !end) { toast("완성한 날은 비워 둘 수 없어요"); document.getElementById("scEnd").value = toInput(showing.doneAt); return; }
+    if (start && end && new Date(start) > new Date(end)) {
+      toast("시작한 날이 완성한 날보다 늦어요. 날짜를 확인해 주세요");
+      document.getElementById(which === "start" ? "scStart" : "scEnd").value = toInput(which === "start" ? showing.createdAt : showing.doneAt);
+      return;
+    }
+    if (start) showing.createdAt = start; else delete showing.createdAt;
+    showing.doneAt = end;
+    save(); fillShowcase();
+  }
+  document.getElementById("scStart").addEventListener("change", function (e) { setDates("start", e.target.value); });
+  document.getElementById("scEnd").addEventListener("change", function (e) { setDates("end", e.target.value); });
+  document.getElementById("scPick").addEventListener("click", function () { document.getElementById("file").click(); });
+  document.getElementById("scPlain").addEventListener("click", function () {
+    if (!showing) return;
+    try { localStorage.removeItem(bgKey(showing.id)); } catch (e) {}
+    delete showing._tempBg;
+    showing.photoAt = new Date().toISOString(); save();
+    applyBg(showing); showFull();
+    toast("기본 배경으로 돌렸어요");
+  });
+  document.getElementById("scRevive").addEventListener("click", function () {
+    var p = showing; if (!p) return;
+    p.done = false; delete p.doneAt; data.current = p.id;
+    save();
+    exitShowcase(false);
+    toast("‘" + (p.name || "이 프로젝트") + "’를 다시 이어서 떠요");
+  });
+  twoTap(document.getElementById("scDel"), "기록 삭제", "한 번 더 누르면 삭제", function () {
+    var p = showing; if (!p) return;
+    try { localStorage.removeItem(bgKey(p.id)); } catch (e) {}
+    data.projects = data.projects.filter(function (x) { return x.id !== p.id; });
+    save();
+    var next = finished()[0];
+    if (next) { openShowcase(next); goToList(); }
+    else exitShowcase(true);
+    toast("‘" + (p.name || "이름 없는 프로젝트") + "’ 기록을 지웠어요");
+  });
+
+  doneToggle.addEventListener("click", function () {
+    var open = donePanel.hidden;
+    donePanel.hidden = !open;
+    doneToggle.setAttribute("aria-expanded", String(open));
+  });
+
+  var celebrateEl = document.getElementById("celebrate"), celebrateT;
+  function celebrate(p) {
+    document.getElementById("celebrateName").textContent = p.name || "이름 없는 프로젝트";
+    var days = p.createdAt ? daysBetween(p.createdAt, p.doneAt) : null;
+    document.getElementById("celebrateMeta").textContent = p.createdAt
+      ? fmtDate(p.createdAt) + "부터 " + (days || 1) + "일 동안 떴어요"
+      : fmtDate(p.doneAt) + " 완성";
+    celebrateEl.hidden = false;
+    var colors = ["#ffe3b8", "#d98e8e", "#e7b865", "#7fa28a", "#c9e4ff", "#b89ad0"];
+    for (var i = 0; i < 28; i++) {
+      var c = document.createElement("div"); c.className = "confetti";
+      c.style.left = (50 + (Math.random() - .5) * 20) + "vw";
+      c.style.top = "46vh";
+      c.style.background = colors[i % colors.length];
+      c.style.setProperty("--dx", ((Math.random() - .5) * 90) + "vw");
+      c.style.setProperty("--dy", (-10 - Math.random() * 40) + "vh");
+      c.style.width = c.style.height = (6 + Math.random() * 8) + "px";
+      document.body.appendChild(c);
+      setTimeout(function (el) { el.remove(); }.bind(null, c), 1700);
+    }
+    buzz([20, 60, 20, 60, 40]);
+    clearTimeout(celebrateT);
+    celebrateT = setTimeout(function () { celebrateEl.hidden = true; }, 2600);
+  }
+  celebrateEl.addEventListener("click", function () { celebrateEl.hidden = true; });
+
+  var limitDialog = document.getElementById("limitDialog");
+  function openLimit() {
+    document.getElementById("limitCount").textContent = finished().length + " / " + FREE_DONE_LIMIT;
+    limitDialog.hidden = false;
+    buzz(40);
+    updateAd();
+  }
+  function closeLimit() { limitDialog.hidden = true; updateAd(); }
+  document.getElementById("limitClose").addEventListener("click", closeLimit);
+  limitDialog.addEventListener("click", function (e) { if (e.target === limitDialog) closeLimit(); });
+  document.getElementById("limitTidy").addEventListener("click", function () {
+    closeLimit();
+    if (!sheetOpen) openSheet();
+    donePanel.hidden = false; doneToggle.setAttribute("aria-expanded", "true");
+    setTimeout(function () { doneToggle.scrollIntoView({ behavior: "smooth", block: "start" }); }, 50);
+    toast("정리할 작품을 누른 뒤 편집에서 ‘기록 삭제’를 눌러 주세요");
+  });
+
+  document.getElementById("doneBtn").addEventListener("click", function () {
+    if (doneFull()) { openLimit(); return; }
+    if (showing) exitShowcase(false);
+    var p = cur();
+    p.done = true; p.doneAt = new Date().toISOString();
+    shownBgFor = null;
+    closeSheet();
+    cur();   // moves to another project in progress, or starts a fresh one
+    save(); render(); renderList();
+    celebrate(p);
+  });
+
+  // ---------- background (saved per project) ----------
+  var bg = document.getElementById("bg");
+  var opInput = document.getElementById("opacity");
+  var opOut = document.getElementById("opOut");
+  var opRow = document.getElementById("opRow");
+  var shownBgFor = null;
+  function bgKey(id) { return BG_KEY + ":" + id; }
+
+  function showOpacity(v) {
+    opInput.value = v; opOut.textContent = v + "%";
+    document.documentElement.style.setProperty("--photo-op", v / 100);
+  }
+  function syncOpRow() {
+    var on = bg.classList.contains("photo");
+    opRow.classList.toggle("off", !on); opInput.disabled = !on;
+  }
+  function applyBg(p) {
+    shownBgFor = p.id;
+    var url = null;
+    try { url = localStorage.getItem(bgKey(p.id)); } catch (e) {}
+    if (!url && p._tempBg) url = p._tempBg;
+    if (url) { bg.style.backgroundImage = "url(\"" + url + "\")"; bg.classList.add("photo"); }
+    else { bg.style.backgroundImage = ""; bg.classList.remove("photo"); }
+    showOpacity(typeof p.op === "number" ? p.op : 80);
+    syncOpRow();
+  }
+
+  opInput.addEventListener("input", function () {
+    var v = Number(opInput.value);
+    cur().op = v; showOpacity(v); save();
+  });
+
+  document.getElementById("pick").addEventListener("click", function () { document.getElementById("file").click(); });
+  document.getElementById("file").addEventListener("change", function (e) {
+    var f = e.target.files && e.target.files[0];
+    if (!f) return;
+    var target = showing || cur();
+    var reader = new FileReader();
+    reader.onload = function () {
+      var img = new Image();
+      img.onload = function () {
+        // shrink so each project's photo stays small enough to keep
+        var max = 2048, w = img.width, h = img.height;
+        var k = Math.min(1, max / Math.max(w, h));
+        var c = document.createElement("canvas");
+        c.width = Math.round(w * k); c.height = Math.round(h * k);
+        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+        var url;
+        try { url = c.toDataURL("image/jpeg", 0.86); } catch (err) { url = reader.result; }
+        var kept = true;
+        try { localStorage.setItem(bgKey(target.id), url); delete target._tempBg; }
+        catch (err) { kept = false; target._tempBg = url; }
+        if (typeof target.op !== "number") target.op = 80;
+        target.photoAt = new Date().toISOString();
+        save();
+        if (showing && target === showing) { applyBg(target); showFull(); }
+        else if (target.id === data.current) applyBg(target);
+        toast(kept ? "‘" + (target.name || "이 프로젝트") + "’ 배경을 바꿨어요"
+                   : "저장 공간이 부족해서 이번에만 적용돼요. 안 쓰는 프로젝트 사진을 지워 보세요");
+      };
+      img.onerror = function () { toast("이 파일은 열 수 없어요. 다른 사진을 골라 주세요"); };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(f);
+    e.target.value = "";
+  });
+  document.getElementById("plain").addEventListener("click", function () {
+    var p = cur();
+    try { localStorage.removeItem(bgKey(p.id)); } catch (e) {}
+    delete p._tempBg;
+    p.photoAt = new Date().toISOString(); save();
+    applyBg(p);
+    toast("기본 배경으로 돌렸어요");
+  });
+
+  // ---------- backup reminder ----------
+  var LB_KEY = "glass-knit-counter-lastbackup-v1";
+  function lastBackup() { try { return localStorage.getItem(LB_KEY); } catch (e) { return null; } }
+  function markBackedUp() {
+    try { localStorage.setItem(LB_KEY, new Date().toISOString()); } catch (e) {}
+    renderBackupStatus();
+  }
+  function worthKeeping() {
+    return data.projects.some(function (p) { return p.done || p.n >= 10 || !!photoOf(p); });
+  }
+  function renderBackupStatus() {
+    var banner = document.getElementById("backupBanner");
+    var bannerText = document.getElementById("backupBannerText");
+    var line = document.getElementById("backupStatus");
+    var lb = lastBackup();
+    if (!lb && !worthKeeping()) {
+      banner.hidden = true;
+      line.hidden = false; line.textContent = "아직 백업한 적이 없어요";
+      return;
+    }
+    var changed = !lb || (data.changedAt && data.changedAt > lb);
+    var days = lb ? Math.floor((Date.now() - new Date(lb).getTime()) / 86400000) : null;
+    line.hidden = false;
+    line.textContent = lb
+      ? "마지막 백업 " + fmtDate(lb) + (changed ? " · 그 뒤로 바뀐 기록이 있어요" : " · 지금 기록까지 모두 저장돼 있어요")
+      : "아직 백업한 적이 없어요";
+    if (changed && (!lb || days >= 1)) {
+      bannerText.textContent = lb
+        ? "백업한 지 " + days + "일 지났어요. 그동안 바뀐 기록이 있어요."
+        : "아직 백업한 적이 없어요. 기록이 사라지지 않게 한 번 저장해 두세요.";
+      banner.classList.toggle("urgent", !lb || days >= 7);
+      banner.hidden = false;
+    } else {
+      banner.hidden = true;
+    }
+  }
+  document.getElementById("bannerBackup").addEventListener("click", function () {
+    document.getElementById("exportBtn").click();
+  });
+
+  // ---------- keep data from being cleared ----------
+  var persistAsked = false;
+  function askPersist() {
+    if (persistAsked) return;
+    persistAsked = true;
+    try {
+      if (!(window.NativeApp && window.NativeApp.isNative) && navigator.storage && navigator.storage.persist) {
+        navigator.storage.persisted().then(function (already) {
+          if (!already) return navigator.storage.persist();
+        }).catch(function () {});
+      }
+    } catch (e) {}
+  }
+  // browsers often grant this only after the person has used the page, so ask again on the first tap
+  stage.addEventListener("pointerdown", askPersist, { once: true });
+
+  // ---------- backup ----------
+  function today() {
+    var d = new Date();
+    return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2);
+  }
+  document.getElementById("exportBtn").addEventListener("click", function () {
+    var out = {
+      app: "glass-knit-counter",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      current: data.current,
+      projects: data.projects.map(function (p) {
+        var img = null;
+        try { img = localStorage.getItem(bgKey(p.id)); } catch (e) {}
+        if (!img && p._tempBg) img = p._tempBg;
+        return { id: p.id, name: p.name, n: p.n, op: typeof p.op === "number" ? p.op : 80, bg: img || null,
+                 done: !!p.done, doneAt: p.doneAt || null, createdAt: p.createdAt || null };
+      })
+    };
+    var name = "단단-백업-" + today() + ".json";
+    if (window.NativeApp && window.NativeApp.isNative) {
+      window.NativeApp.shareTextFile(name, JSON.stringify(out)).then(function () {
+        markBackedUp(); toast("백업 파일을 보냈어요");
+      }).catch(function (err) {
+        var msg = String((err && err.message) || err || "");
+        if (!/cancel/i.test(msg)) toast("백업 파일을 만들지 못했어요. 다시 시도해 주세요");
+      });
+      return;
+    }
+    var blob = new Blob([JSON.stringify(out)], { type: "application/json" });
+
+    function download() {
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+      markBackedUp(); toast("백업 파일을 저장했어요");
+    }
+    // on phones the share sheet ("파일에 저장") is more reliable than a download link
+    try {
+      var file = new File([blob], name, { type: "application/json" });
+      if (navigator.canShare && navigator.canShare({ files: [file] }) && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+        navigator.share({ files: [file], title: name }).then(function () {
+          markBackedUp(); toast("백업 파일을 저장했어요");
+        }).catch(function (err) {
+          if (!err || err.name !== "AbortError") download();
+        });
+        return;
+      }
+    } catch (e) {}
+    download();
+  });
+
+  document.getElementById("importBtn").addEventListener("click", function () { document.getElementById("importFile").click(); });
+  document.getElementById("importFile").addEventListener("change", function (e) {
+    var f = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!f) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      var b;
+      try { b = JSON.parse(reader.result); } catch (err) { b = null; }
+      if (!b || b.app !== "glass-knit-counter" || !Array.isArray(b.projects)) {
+        toast("단단 백업 파일이 아니에요. 저장해 둔 .json 파일을 골라 주세요");
+        return;
+      }
+      var added = 0, updated = 0, photoFail = false;
+      b.projects.forEach(function (bp) {
+        if (!bp || typeof bp.id !== "string") return;
+        var n = Math.max(0, Math.floor(Number(bp.n) || 0));
+        var op = Number(bp.op); if (!(op >= 20 && op <= 100)) op = 80;
+        var existing = data.projects.find(function (x) { return x.id === bp.id; });
+        var p = existing || { id: bp.id };
+        p.name = typeof bp.name === "string" ? bp.name.slice(0, 40) : "불러온 프로젝트";
+        p.n = n; p.op = op;
+        if (bp.done) { p.done = true; p.doneAt = typeof bp.doneAt === "string" ? bp.doneAt : new Date().toISOString(); }
+        else { delete p.done; delete p.doneAt; }
+        if (typeof bp.createdAt === "string") p.createdAt = bp.createdAt;
+        if (existing) updated++; else { data.projects.push(p); added++; }
+        try {
+          if (typeof bp.bg === "string" && bp.bg.indexOf("data:image/") === 0) {
+            localStorage.setItem(bgKey(p.id), bp.bg); delete p._tempBg;
+          } else {
+            localStorage.removeItem(bgKey(p.id));
+          }
+        } catch (err) { photoFail = true; p._tempBg = bp.bg; }
+      });
+      // a fresh device starts with one empty sample project; drop it if the backup brought real ones
+      if (added && data.projects.length > added) {
+        data.projects = data.projects.filter(function (x) {
+          var isBlankStarter = !x.done && x.name === "첫 프로젝트" && x.n === 0 && !b.projects.some(function (bp) { return bp && bp.id === x.id; });
+          var hasPhoto = false; try { hasPhoto = !!localStorage.getItem(bgKey(x.id)); } catch (err) {}
+          return !(isBlankStarter && !hasPhoto);
+        });
+      }
+      if (b.current && data.projects.some(function (x) { return x.id === b.current && !x.done; })) data.current = b.current;
+      shownBgFor = null;
+      save(); render(); renderList(); nameInput.value = cur().name;
+      var msg = "프로젝트 " + (added + updated) + "개를 불러왔어요";
+      if (photoFail) msg += ". 저장 공간이 부족해 일부 사진은 이번에만 보여요";
+      toast(msg);
+    };
+    reader.onerror = function () { toast("파일을 읽지 못했어요. 다시 골라 주세요"); };
+    reader.readAsText(f);
+  });
+
+  // ---------- boot ----------
+  // photo and opacity from the earlier single-background version go to the current project
+  try {
+    var oldImg = localStorage.getItem(BG_KEY);
+    if (oldImg) {
+      var c0 = cur();
+      if (!localStorage.getItem(bgKey(c0.id))) localStorage.setItem(bgKey(c0.id), oldImg);
+      localStorage.removeItem(BG_KEY);
+      var o = Number(localStorage.getItem(OP_KEY));
+      if (o >= 20 && o <= 100 && typeof c0.op !== "number") c0.op = o;
+    }
+  } catch (e) {}
+  // Android back button: close whatever is on top, otherwise send the app to the background
+  if (window.NativeApp && window.NativeApp.onBack) {
+    window.NativeApp.onBack(function () {
+      if (!onboardEl.hidden) { if (guideIndex > 0) showSlide(guideIndex - 1); else closeGuide(); return; }
+      if (!limitDialog.hidden) { closeLimit(); return; }
+      if (!celebrateEl.hidden) { celebrateEl.hidden = true; return; }
+      if (sheetOpen) { closeSheet(); return; }
+      if (showSheetOpen) { closeShowSheet(); return; }
+      if (showing) { leaveShowcase(); return; }
+      window.NativeApp.minimize();
+    });
+  }
+  // ---------- settings: app info ----------
+  var APP_VERSION = "1.1.2";
+  var CONTACT_EMAIL = "";   // 스토어에 공개된 문의 이메일
+  var PRIVACY_URL = "";     // 개인정보처리방침 주소
+  document.getElementById("appVersion").textContent = APP_VERSION;
+  // hidden: tap the version 5 times to see how far the ad got (for troubleshooting)
+  (function () {
+    var taps = 0, last = 0;
+    document.querySelector(".app-info-name").addEventListener("click", function () {
+      var now = Date.now(); taps = now - last < 600 ? taps + 1 : 1; last = now;
+      if (taps < 5) return;
+      taps = 0;
+      var N = window.NativeApp, lines = N && N.ads && N.ads.log ? N.ads.log() : [];
+      alert("광고 상태\n" + (lines.length ? lines.join("\n") : "기록 없음 (광고 시작 안 됨)"));
+    });
+  })();
+  if (CONTACT_EMAIL) {
+    document.getElementById("contactMail").textContent = CONTACT_EMAIL;
+    document.getElementById("contactRow").hidden = false;
+    document.getElementById("copyMail").addEventListener("click", function () {
+      var done = function () { toast("이메일 주소를 복사했어요"); };
+      try {
+        navigator.clipboard.writeText(CONTACT_EMAIL).then(done, function () {
+          var r = document.createRange(); r.selectNodeContents(document.getElementById("contactMail"));
+          var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+          toast("주소를 길게 눌러 복사해 주세요");
+        });
+      } catch (e) { toast("주소를 길게 눌러 복사해 주세요"); }
+    });
+  }
+  if (PRIVACY_URL) {
+    var pl = document.getElementById("privacyLink");
+    pl.href = PRIVACY_URL; pl.hidden = false;
+  }
+
+  // ---------- first-run guide ----------
+  var GUIDE_KEY = "glass-knit-counter-guide-v1";
+  var onboardEl = document.getElementById("onboard");
+  var guideIndex = 0, GUIDE_SLIDES = 5;
+  var guideTrack = document.getElementById("onboardTrack");
+  var guideGo = document.getElementById("onboardGo");
+  var guideSkip = document.getElementById("onboardSkip");
+  var guideDots = document.querySelectorAll("#onboardDots span");
+  function showSlide(i) {
+    guideIndex = Math.max(0, Math.min(GUIDE_SLIDES - 1, i));
+    guideTrack.style.transform = "translateX(" + (-100 * guideIndex) + "%)";
+    guideDots.forEach(function (d, k) { d.classList.toggle("on", k === guideIndex); });
+    var last = guideIndex === GUIDE_SLIDES - 1;
+    guideGo.textContent = last ? "시작하기" : "다음";
+    guideSkip.classList.toggle("gone", last);
+  }
+  function openGuide() { showSlide(0); onboardEl.hidden = false; guideGo.focus(); updateAd(); }
+  function closeGuide() {
+    onboardEl.hidden = true;
+    updateAd();
+    try { localStorage.setItem(GUIDE_KEY, "seen"); } catch (e) {}
+  }
+  guideGo.addEventListener("click", function () {
+    if (guideIndex < GUIDE_SLIDES - 1) showSlide(guideIndex + 1); else closeGuide();
+  });
+  guideSkip.addEventListener("click", closeGuide);
+  // swipe left/right between slides
+  var swipe = null;
+  var guideView = document.getElementById("onboardViewport");
+  guideView.addEventListener("pointerdown", function (e) { swipe = { x: e.clientX, y: e.clientY }; });
+  guideView.addEventListener("pointerup", function (e) {
+    if (!swipe) return;
+    var dx = e.clientX - swipe.x, dy = e.clientY - swipe.y; swipe = null;
+    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) showSlide(guideIndex + (dx < 0 ? 1 : -1));
+  });
+  guideView.addEventListener("pointercancel", function () { swipe = null; });
+  document.getElementById("guideAgain").addEventListener("click", openGuide);
+  var seenGuide = false;
+  try { seenGuide = localStorage.getItem(GUIDE_KEY) === "seen"; } catch (e) {}
+  if (!seenGuide) openGuide();
+
+  // ---------- premium (one purchase: no ads + unlimited finished list) & ads ----------
+  // The ad banner only ever appears while the settings sheet is open — never on the counter.
+  var NA = window.NativeApp || {};
+  var store = NA.store && NA.store.available ? NA.store : null;
+  var premiumBusy = false, premiumCheckedAt = 0;
+  // The offer only shows once the product exists in Play Console, so this build can ship before selling starts.
+  var productReady = false, priceCheckedAt = 0;
+  function loadPrice() {
+    if (!store || productReady) return;
+    priceCheckedAt = Date.now();
+    store.price().then(function (p) {
+      if (!p) return;
+      productReady = true;
+      document.querySelectorAll(".premium-price").forEach(function (el) { el.textContent = p; });
+      applyPremiumUI();
+    });
+  }
+  function setPremium(on) {
+    var was = isPremium();
+    try { if (on) localStorage.setItem("glass-knit-counter-premium-v1", "1"); else localStorage.removeItem("glass-knit-counter-premium-v1"); } catch (e) {}
+    applyPremiumUI();
+    if (on && NA.ads) NA.ads.remove();
+    if (!on && was && NA.ads) NA.ads.start().then(updateAd);
+    renderDone();
+  }
+  function applyPremiumUI() {
+    var on = isPremium();
+    var sell = !!store && productReady && !on;
+    document.getElementById("premiumSection").hidden = !(sell || on);
+    document.getElementById("premiumOffer").hidden = !sell;
+    document.getElementById("premiumOwned").hidden = !on;
+    document.getElementById("limitBuy").hidden = !sell;
+  }
+  function setBusy(b) {
+    premiumBusy = b;
+    ["premiumBuy", "limitBuy"].forEach(function (id) { document.getElementById(id).disabled = b; });
+  }
+  function buyPremium() {
+    if (!store || premiumBusy) return;
+    setBusy(true);
+    store.buy().then(function (r) {
+      setBusy(false);
+      if (r === "ok") {
+        setPremium(true);
+        if (!limitDialog.hidden) closeLimit();
+        buzz([20, 40, 20, 40]);
+        toast("고마워요! 광고가 사라지고 완성 목록이 무제한이 됐어요");
+      } else if (r === "pending") {
+        toast("결제가 처리되는 중이에요. 끝나면 자동으로 적용돼요");
+      } else if (r === "error") {
+        toast("결제 창을 열지 못했어요. 잠시 뒤 다시 해 주세요");
+      }
+    });
+  }
+  function refreshPremium(manual) {
+    if (!store) return Promise.resolve(null);
+    premiumCheckedAt = Date.now();
+    return store.check().then(function (owned) {
+      if (owned === true && !isPremium()) setPremium(true);
+      else if (owned === false && isPremium()) setPremium(false);   // refunded
+      if (manual) {
+        if (owned === true) toast("구매를 복원했어요");
+        else if (owned === false) toast("이 Google 계정으로 구매한 기록이 없어요");
+        else toast("Play 스토어에 연결하지 못했어요. 인터넷 연결을 확인해 주세요");
+      }
+      return owned;
+    });
+  }
+  document.getElementById("premiumBuy").addEventListener("click", buyPremium);
+  document.getElementById("limitBuy").addEventListener("click", buyPremium);
+  sheet.addEventListener("transitionend", function () {
+    // purchases restore on their own: checked at launch and whenever settings opens
+    if (sheetOpen && store && !isPremium() && Date.now() - premiumCheckedAt > 10000) refreshPremium(false);
+    if (sheetOpen && !productReady && Date.now() - priceCheckedAt > 10000) loadPrice();
+  });
+  if (NA.ads) {
+    NA.ads.onHeight(function (h) { document.documentElement.style.setProperty("--ad-h", h + "px"); });
+    document.getElementById("adPrivacy").addEventListener("click", function () {
+      NA.ads.setVisible(false);
+      NA.ads.showPrivacyOptions().catch(function () {}).then(updateAd);
+    });
+  }
+  applyPremiumUI();
+  if (store) {
+    loadPrice();
+    // never let a slow or broken Play Billing connection hold up the ads
+    var checked = refreshPremium(false);
+    var timeout = new Promise(function (r) { setTimeout(r, 4000); });
+    Promise.race([checked, timeout]).then(function () {
+      if (NA.ads && NA.ads.note) NA.ads.note(isPremium() ? "프리미엄 → 광고 없음" : "광고 시작");
+      if (isPremium() || !NA.ads) return;
+      NA.ads.start().then(function () {
+        document.getElementById("adPrivacy").hidden = !NA.ads.privacyRequired();
+        updateAd();
+      });
+    });
+  }
+
+  askPersist(); persistAsked = false;
+  save(); render();
+});
+</script>
+
+
+<script>
+if (!(window.NativeApp && window.NativeApp.isNative)) {
+  var ga = document.getElementById("getApp"); if (ga) ga.hidden = false;
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () { navigator.serviceWorker.register("sw.js").catch(function () {}); });
+  }
+}
+</script>
+</body>
+</html>
