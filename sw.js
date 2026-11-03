@@ -1,5 +1,5 @@
 // Offline support: the app shell is cached on install; everything else is cached as it loads.
-const CACHE = "dandan-web-v1";
+const CACHE = "dandan-web-v2";
 const SHELL = [
   "./",
   "index.html",

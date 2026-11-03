@@ -42,6 +42,7 @@
 <!-- Google AdSense: ads only ever go at the bottom of the settings sheet, never on the counter -->
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2486517051650098" crossorigin="anonymous"></script>
 <script src="native.js"></script>
+<script>window.__isAndroidWeb = /Android/i.test(navigator.userAgent) && !(window.NativeApp && window.NativeApp.isNative);</script>
 <style>
 /* Layout: full-screen tap canvas in four zones, frosted counter at the centre, settings tucked behind one small corner button that opens a glass sheet. */
 :root {
@@ -697,6 +698,23 @@ body.showcase .menu-btn { opacity: .8; }
 }
 .slide-list b { font-size: 15px; font-weight: 500; }
 .slide-list span { font-size: 13px; line-height: 1.55; color: var(--ink-soft); }
+.onboard-app { font-size: 13px; color: var(--ink-soft); text-decoration: underline; text-underline-offset: 3px; }
+.app-nudge {
+  position: fixed; left: 50%; top: calc(76px + env(safe-area-inset-top, 0px)); z-index: 7;
+  transform: translateX(-50%);
+  width: min(360px, calc(100% - 32px)); box-sizing: border-box;
+  padding: 14px 16px; border-radius: 20px;
+  background: var(--sheet); border: 1px solid var(--glass-edge);
+  -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
+  box-shadow: 0 14px 40px -16px rgba(0,0,0,.6);
+  animation: fadeIn .3s ease;
+}
+.app-nudge-title { font-size: 15px; font-weight: 500; }
+.app-nudge-text { margin: 4px 0 12px; font-size: 13px; line-height: 1.55; color: var(--ink-soft); word-break: keep-all; }
+.app-nudge-actions { display: flex; gap: 8px; }
+.app-nudge-actions a, .app-nudge-actions button { flex: 1; text-align: center; text-decoration: none; padding: 9px 12px; border-radius: 12px; font: inherit; font-size: 14px; }
+.app-nudge-get { color: #3a2530; font-weight: 500; background: linear-gradient(145deg, #ffe9c7, #ffc9a8); border: 1px solid rgba(255,240,220,.9); }
+.app-nudge-close { appearance: none; cursor: pointer; color: var(--ink); background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.22); }
 .onboard-foot { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 14px; padding-top: 16px; }
 .onboard-dots { display: flex; gap: 8px; }
 .onboard-dots span { width: 7px; height: 7px; border-radius: 999px; background: rgba(255,255,255,.3); transition: width .25s ease, background .25s ease; }
@@ -1030,6 +1048,7 @@ body.showcase .menu-btn { opacity: .8; }
   <div class="onboard-foot">
     <div class="onboard-dots" id="onboardDots" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
     <button type="button" class="onboard-go" id="onboardGo">다음</button>
+    <a class="onboard-app" id="onboardApp" href="https://play.google.com/store/apps/details?id=com.niaxcroknit.dandan" target="_blank" rel="noopener" hidden>안드로이드 앱으로 받기</a>
   </div>
 </div>
 <div class="limit-dialog" id="limitDialog" role="dialog" aria-modal="true" aria-labelledby="limitTitle" hidden>
@@ -1962,6 +1981,8 @@ body.showcase .menu-btn { opacity: .8; }
     var last = guideIndex === GUIDE_SLIDES - 1;
     guideGo.textContent = last ? "시작하기" : "다음";
     guideSkip.classList.toggle("gone", last);
+    var oa = document.getElementById("onboardApp");
+    if (oa) oa.hidden = !(last && window.__isAndroidWeb);
   }
   function openGuide() { showSlide(0); onboardEl.hidden = false; guideGo.focus(); updateAd(); }
   function closeGuide() {
@@ -2092,13 +2113,43 @@ body.showcase .menu-btn { opacity: .8; }
 </script>
 
 
+<div class="app-nudge" id="appNudge" role="dialog" aria-label="앱 안내" hidden>
+  <div class="app-nudge-title">📱 앱으로 쓰면 더 편해요</div>
+  <p class="app-nudge-text">브라우저 정리로 기록이 지워질 걱정이 없고, 누를 때마다 진동으로 확실하게 알려 줘요.</p>
+  <div class="app-nudge-actions">
+    <a class="app-nudge-get" id="appNudgeGet" href="https://play.google.com/store/apps/details?id=com.niaxcroknit.dandan" target="_blank" rel="noopener">앱 받기</a>
+    <button type="button" class="app-nudge-close" id="appNudgeClose">괜찮아요</button>
+  </div>
+</div>
 <script>
 if (!(window.NativeApp && window.NativeApp.isNative)) {
-  var ga = document.getElementById("getApp"); if (ga) ga.hidden = false;
+  var ga = document.getElementById("getApp"); if (ga) ga.hidden = !window.__isAndroidWeb;
   var wp = document.getElementById("webPrivacy"); if (wp) wp.hidden = false;
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", function () { navigator.serviceWorker.register("sw.js").catch(function () {}); });
   }
+  // Android only: suggest the app at most once a week, never on the very first visit, never over the guide
+  (function () {
+    if (!window.__isAndroidWeb) return;
+    var VISIT = "dandan-web-visited-v1", SHOWN = "dandan-web-nudge-v1", WEEK = 7 * 24 * 60 * 60 * 1000;
+    var visited = false, last = 0;
+    try { visited = localStorage.getItem(VISIT) === "1"; last = Number(localStorage.getItem(SHOWN)) || 0; localStorage.setItem(VISIT, "1"); } catch (e) { return; }
+    if (!visited || Date.now() - last < WEEK) return;
+    var card = document.getElementById("appNudge");
+    function hide() { card.hidden = true; }
+    ["pointerdown", "pointerup", "click", "touchstart"].forEach(function (t) {
+      card.addEventListener(t, function (e) { e.stopPropagation(); });
+    });
+    document.getElementById("appNudgeClose").addEventListener("click", hide);
+    document.getElementById("appNudgeGet").addEventListener("click", hide);
+    function tryShow() {
+      var guide = document.getElementById("onboard");
+      if (guide && !guide.hidden) { setTimeout(tryShow, 1500); return; }
+      card.hidden = false;
+      try { localStorage.setItem(SHOWN, String(Date.now())); } catch (e) {}
+    }
+    setTimeout(tryShow, 1200);
+  })();
 }
 </script>
 </body>
