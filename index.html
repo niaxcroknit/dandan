@@ -3,8 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no">
-<title>단단</title>
-<meta name="description" content="화면 위를 누르면 올라가고 아래를 누르면 내려가는 뜨개 단수 카운터. 프로젝트별 카운트와 배경 사진을 저장해요.">
+<title>단단 - 뜨개 단수 카운터 | 대바늘·코바늘 단수 세기</title>
+<meta name="description" content="뜨개하다 손을 멈추지 않아도 되는 무료 단수 카운터. 화면 위를 톡 누르면 한 단 올라가고, 아래를 길게 누르면 내려가요. 프로젝트별 단수와 배경 사진 저장, 완성작 모아 보기, 백업까지. 설치 없이 바로 써요.">
+<meta name="keywords" content="뜨개 단수 카운터, 단수 카운터, 뜨개질 카운터, 코바늘 단수, 대바늘 단수, 뜨개 앱, 로우 카운터, row counter">
+<link rel="canonical" href="https://niaxcroknit.github.io/dandan/">
+<meta name="robots" content="index, follow">
 <meta name="theme-color" content="#3a2c35">
 <meta name="format-detection" content="telephone=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -14,10 +17,30 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://niaxcroknit.github.io/dandan/">
+<meta property="og:locale" content="ko_KR">
 <meta property="og:title" content="단단 · 뜨개 단수 카운터">
 <meta property="og:description" content="뜨개할 때 화면만 톡톡 누르면 되는 단수 카운터">
 <meta property="og:image" content="https://niaxcroknit.github.io/dandan/icons/icon-512.png">
 <link rel="stylesheet" href="fonts/fonts.css">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "단단 - 뜨개 단수 카운터",
+  "url": "https://niaxcroknit.github.io/dandan/",
+  "applicationCategory": "LifestyleApplication",
+  "operatingSystem": "Web, Android",
+  "inLanguage": "ko",
+  "description": "화면 위를 누르면 한 단 올라가고 아래를 길게 누르면 내려가는 뜨개 단수 카운터. 프로젝트별 단수와 배경 사진, 완성작 기록을 기기 안에 저장해요.",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "KRW" },
+  "sameAs": ["https://play.google.com/store/apps/details?id=com.niaxcroknit.dandan"],
+  "publisher": { "@type": "Organization", "name": "니아크로니트", "url": "https://niaxcroknit.github.io/" }
+}
+</script>
+<!-- Google AdSense: ads only ever go at the bottom of the settings sheet, never on the counter -->
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2486517051650098" crossorigin="anonymous"></script>
 <script src="native.js"></script>
 <style>
 /* Layout: full-screen tap canvas in four zones, frosted counter at the centre, settings tucked behind one small corner button that opens a glass sheet. */
@@ -879,6 +902,7 @@ body.showcase .menu-btn { opacity: .8; }
   <footer class="app-info" id="appInfo">
     <div class="app-info-name">단단 <span id="appVersion"></span></div>
     <button type="button" class="btn ghost mini guide-again" id="guideAgain">사용법 다시 보기</button>
+    <a class="app-info-link web-only" id="webPrivacy" href="https://niaxcroknit.github.io/privacy.html" target="_blank" rel="noopener" hidden>개인정보처리방침</a>
     <a class="app-info-link web-only" id="getApp" href="https://play.google.com/store/apps/details?id=com.niaxcroknit.dandan" target="_blank" rel="noopener" hidden>안드로이드 앱으로 받기</a>
     <div class="app-info-row" id="contactRow" hidden>
       <span>문의</span>
@@ -2071,6 +2095,7 @@ body.showcase .menu-btn { opacity: .8; }
 <script>
 if (!(window.NativeApp && window.NativeApp.isNative)) {
   var ga = document.getElementById("getApp"); if (ga) ga.hidden = false;
+  var wp = document.getElementById("webPrivacy"); if (wp) wp.hidden = false;
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", function () { navigator.serviceWorker.register("sw.js").catch(function () {}); });
   }
